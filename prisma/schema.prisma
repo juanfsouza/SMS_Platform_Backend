@@ -1,0 +1,43 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  balance   Float    @default(0.0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  transactions Transaction[]
+  smsActivations SmsActivation[]
+}
+
+model Transaction {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  amount    Float
+  type      String   // "CREDIT" | "DEBIT"
+  status    String   // "PENDING" | "COMPLETED" | "FAILED"
+  createdAt DateTime @default(now())
+}
+
+model SmsActivation {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id])
+  service      String   // Ex.: "wa_0" (WhatsApp sem redirecionamento)
+  country      String
+  number       String
+  code         String?
+  status       String   // "PENDING" | "COMPLETED" | "CANCELLED"
+  activationId String?  @unique // ID da ativação retornado pelo SMS-Activate
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
