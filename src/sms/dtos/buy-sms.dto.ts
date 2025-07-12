@@ -1,6 +1,6 @@
 import { z } from 'zod';
+import { CountryMapService } from '../country-map.service';
 
-// Map user-facing service codes to SMS-Activate service codes
 const SERVICE_MAP: Record<string, string> = {
   wa: '0', // WhatsApp
   tg: '1', // Telegram
@@ -10,35 +10,34 @@ const SERVICE_MAP: Record<string, string> = {
   go: '5', // Google
   fb: '6', // Facebook
   tw: '7', // Twitter
+  lf: '8', // Tiktok
   ot: '204', // Other
 };
 
-// Map numeric country codes to SMS-Activate country codes
-const COUNTRY_MAP: Record<string, string> = {
-  '0': 'bac', // Russia
-  '1': 'baa', // Ukraine
-  '2': 'bah', // Kazakhstan
-  '6': 'bau', // Indonesia
-  '16': 'bdp', // China
-};
-
 const VALID_SERVICES = Object.keys(SERVICE_MAP);
-const VALID_COUNTRIES = Object.keys(COUNTRY_MAP);
 
 export const BuySmsDto = z.object({
   service: z.string().refine((val) => VALID_SERVICES.includes(val), {
     message: `Invalid service. Must be one of: ${VALID_SERVICES.join(', ')}`,
   }),
-  country: z.string().regex(/^\d+$/, { message: 'Country must be a numeric code' }).refine((val) => VALID_COUNTRIES.includes(val), {
-    message: `Invalid country code. Must be one of: ${VALID_COUNTRIES.join(', ')}`,
-  }),
+  country: z.string().regex(/^\d+$/, { message: 'Country must be a numeric code' }),
 });
 
-export const mapToSmsActivateCodes = (service: string, country: string): { service: string; country: string } => {
+export const mapToSmsActivateCodes = async (
+  service: string,
+  country: string,
+  countryMapService: CountryMapService,
+): Promise<{ service: string; country: string }> => {
+  const countryMap = await countryMapService.getCountryMap();
+  if (!countryMap[country]) {
+    throw new Error(`Invalid country code: ${country}. Available codes: ${Object.keys(countryMap).join(', ')}`);
+  }
   return {
     service: SERVICE_MAP[service] || service,
-    country: COUNTRY_MAP[country] || country,
+    country: countryMap[country] || country,
   };
 };
 
 export type BuySmsDto = z.infer<typeof BuySmsDto>;
+
+export { CountryMapService };

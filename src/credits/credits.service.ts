@@ -4,21 +4,19 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { lastValueFrom } from 'rxjs';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { CountryMapService } from '../sms/country-map.service';
 
 @Injectable()
 export class CreditsService {
   private readonly logger = new Logger(CreditsService.name);
   private readonly smsActivateApiUrl = 'https://api.sms-activate.ae/stubs/handler_api.php';
-
-  // Manual price overrides for known discrepancies
-  private readonly PRICE_OVERRIDES: Record<string, { service: string; country: string; priceUsd: number }> = {
-    '0_baa': { service: '0', country: 'baa', priceUsd: 0.97 },
-  };
+  private readonly FIXED_MARKUP = 1.5; // 50% markup from SMS-Activate API
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly countryMapService: CountryMapService,
   ) {}
 
   async updateMarkupPercentage(percentage: number): Promise<void> {
@@ -54,59 +52,71 @@ export class CreditsService {
   async fetchAndCacheServicePrices(): Promise<void> {
     const apiKey = this.configService.get('smsActivate.apiKey');
     const exchangeRate = parseFloat(this.configService.get('usdBrlExchangeRate') || '5.5');
-    const markupPercentage = await this.getMarkupPercentage();
+    const adminMarkupPercentage = await this.getMarkupPercentage();
+    const priceRecords: Array<{ service: string; country: string; priceUsd: number; priceBrl: number }> = [];
+    const validServices = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '204']; 
+
+    const countryMap = await this.countryMapService.getCountryMap();
+    const countryCodes = Object.keys(countryMap);
+
+    this.logger.log(`Fetching prices for ${validServices.length} services and ${countryCodes.length} countries`);
 
     try {
       const response = await lastValueFrom(
         this.httpService.get(`${this.smsActivateApiUrl}?api_key=${apiKey}&action=getPrices`),
       );
-      this.logger.log(`Fetched SMS-Activate prices: ${JSON.stringify(response.data)}`);
-
       const prices = response.data;
+      this.logger.debug(`Fetched SMS-Activate prices: ${JSON.stringify(prices)}`);
+
       if (!prices || typeof prices !== 'object') {
         throw new BadRequestException('Invalid SMS-Activate prices response');
       }
 
-      const priceRecords: Array<{ service: string; country: string; priceUsd: number; priceBrl: number }> = [];
-      for (const service of Object.keys(prices)) {
+      const foundServices = new Set(Object.keys(prices));
+      for (const service of validServices) {
+        if (!foundServices.has(service)) {
+          this.logger.warn(`Service ${service} not found in SMS-Activate prices response. Contact SMS-Activate support.`);
+        }
+      }
+
+      for (const service of validServices) {
         const countries = prices[service];
         if (!countries || typeof countries !== 'object') {
           this.logger.warn(`No countries found for service: ${service}`);
           continue;
         }
         for (const country in countries) {
-          let priceUsd = parseFloat(countries[country].cost);
-          if (isNaN(priceUsd) || priceUsd <= 0) {
+          const numericCountryCode = Object.keys(countryMap).find((code) => countryMap[code] === country);
+          if (!numericCountryCode) {
+            this.logger.warn(`Country ${country} not found in countryMap, using as-is from getPrices`);
+          }
+          const priceUsdBase = parseFloat(countries[country].cost);
+          if (isNaN(priceUsdBase) || priceUsdBase <= 0) {
             this.logger.warn(`Invalid price for service: ${service}, country: ${country}`);
             continue;
           }
 
-          // Apply manual override if exists
-          const overrideKey = `${service}_${country}`;
-          if (this.PRICE_OVERRIDES[overrideKey]) {
-            priceUsd = this.PRICE_OVERRIDES[overrideKey].priceUsd;
-            this.logger.warn(`Applied price override for service: ${service}, country: ${country}, priceUsd: ${priceUsd}`);
-          }
-
-          const priceBrl = priceUsd * exchangeRate * (1 + markupPercentage / 100);
+          const priceUsd = priceUsdBase * this.FIXED_MARKUP;
+          const priceBrl = priceUsd * exchangeRate * (1 + adminMarkupPercentage / 100);
           priceRecords.push({
             service,
             country,
-            priceUsd,
+            priceUsd: parseFloat(priceUsd.toFixed(2)),
             priceBrl: parseFloat(priceBrl.toFixed(2)),
           });
         }
       }
 
       if (priceRecords.length === 0) {
-        throw new BadRequestException('No valid prices found from SMS-Activate');
+        this.logger.error('No valid prices found from SMS-Activate API after processing');
+        throw new BadRequestException('No valid prices found from SMS-Activate API');
       }
 
       await this.prisma.$transaction([
         this.prisma.servicePrice.deleteMany(),
         this.prisma.servicePrice.createMany({ data: priceRecords }),
       ]);
-      this.logger.log(`Cached ${priceRecords.length} service prices with ${markupPercentage}% markup`);
+      this.logger.log(`Cached ${priceRecords.length} service prices with 50% fixed markup and ${adminMarkupPercentage}% admin markup`);
     } catch (error) {
       this.logger.error(`Failed to fetch SMS-Activate prices: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to fetch SMS-Activate prices: ${error.message}`);

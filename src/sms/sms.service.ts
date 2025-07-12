@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { lastValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreditsService } from '../credits/credits.service';
-import { mapToSmsActivateCodes } from './dtos/buy-sms.dto';
+import { CountryMapService, mapToSmsActivateCodes } from './dtos/buy-sms.dto';
 
 @Injectable()
 export class SmsService {
@@ -16,6 +16,7 @@ export class SmsService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly creditsService: CreditsService,
+    private readonly countryMapService: CountryMapService,
   ) {}
 
   async getNumbersStatus(country: string, operator: string): Promise<any> {
@@ -39,10 +40,16 @@ export class SmsService {
       throw new BadRequestException('User not found');
     }
 
-    // Map user-facing codes to SMS-Activate codes
-    const { service: mappedService, country: mappedCountry } = mapToSmsActivateCodes(service, country);
+    const { service: mappedService, country: mappedCountry } = await mapToSmsActivateCodes(service, country, this.countryMapService);
 
-    const { priceBrl, priceUsd } = await this.creditsService.getServicePrice(mappedService, mappedCountry);
+    let price;
+    try {
+      price = await this.creditsService.getServicePrice(mappedService, mappedCountry);
+    } catch (error) {
+      throw new BadRequestException(`Price not available for service ${service} and country ${country}. Please refresh prices.`);
+    }
+    const { priceBrl, priceUsd } = price;
+
     if (user.balance < priceBrl) {
       throw new ForbiddenException(`Insufficient credits. Required: ${priceBrl} credits, Available: ${user.balance} credits`);
     }
@@ -50,7 +57,7 @@ export class SmsService {
     try {
       this.logger.log(`Requesting number for service: ${service}, country: ${country}, mapped to service: ${mappedService}, country: ${mappedCountry}, expected price: ${priceUsd} USD`);
       const response = await lastValueFrom(
-        this.httpService.get(`${this.apiUrl}?api_key=${apiKey}&action=getNumber&service=${service}&country=${country}`),
+        this.httpService.get(`${this.apiUrl}?api_key=${apiKey}&action=getNumber&service=${mappedService}&country=${country}`),
       );
       this.logger.log(`getNumber response: ${response.data}`);
 
@@ -80,7 +87,7 @@ export class SmsService {
             amount: priceBrl,
             type: 'DEBIT',
             status: 'COMPLETED',
-            description: `SMS purchase: ${service} (${country}), charged ${priceUsd} USD`,
+            description: `SMS purchase: ${service} (${country}), expected ${priceUsd} USD`,
             smsActivationId: null,
           },
         }),
