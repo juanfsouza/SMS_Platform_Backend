@@ -8,6 +8,7 @@ interface User {
   email: string;
   password: string;
   balance?: number;
+  role: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -26,6 +27,7 @@ export class AuthService {
         data: {
           email,
           password: hashedPassword,
+          role: 'USER',
         },
       });
       return this.generateToken(user);
@@ -46,7 +48,7 @@ export class AuthService {
   }
 
   private generateToken(user: User) {
-    const payload = { id: user.id, email: user.email };
+    const payload = { id: user.id, email: user.email, role: user.role };
     return {
       access_token: this.jwtService.sign(payload),
     };

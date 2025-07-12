@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Param, UseGuards, Req, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, UseGuards, Req, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { SmsService } from './sms.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
@@ -40,17 +40,63 @@ export class SmsController {
     try {
       const activation = await this.prismaService.smsActivation.findUnique({
         where: { activationId },
+        include: { transactions: true },
       });
       if (!activation) {
         throw new NotFoundException(`No SmsActivation record found for activationId: ${activationId}`);
       }
-      await this.prismaService.smsActivation.update({
-        where: { activationId },
-        data: {
-          status: status === '6' ? 'COMPLETED' : status === '8' ? 'CANCELLED' : 'PENDING',
-          code: code || null,
-        },
-      });
+
+      const updateData: any = {
+        status: status === '6' ? 'COMPLETED' : status === '8' ? 'CANCELLED' : 'PENDING',
+        code: code || null,
+      };
+
+      if (status === '8') {
+        // Find the DEBIT transaction associated with this activation
+        const debitTransaction = activation.transactions.find(
+          (t) => t.type === 'DEBIT' && t.status === 'COMPLETED' && t.smsActivationId === activation.id,
+        );
+        if (debitTransaction && debitTransaction.amount > 0) {
+          await this.prismaService.$transaction([
+            // Refund credits to user
+            this.prismaService.user.update({
+              where: { id: activation.userId },
+              data: { balance: { increment: debitTransaction.amount } },
+            }),
+            // Record refund transaction
+            this.prismaService.transaction.create({
+              data: {
+                userId: activation.userId,
+                amount: debitTransaction.amount,
+                type: 'REFUNDED',
+                status: 'COMPLETED',
+                description: `Refund for SMS activation: ${activation.service} (${activation.country})`,
+                smsActivationId: activation.id,
+              },
+            }),
+            this.prismaService.transaction.update({
+              where: { id: debitTransaction.id },
+              data: { status: 'REFUNDED' },
+            }),
+            this.prismaService.smsActivation.update({
+              where: { activationId },
+              data: updateData,
+            }),
+          ]);
+          this.logger.log(`Refunded ${debitTransaction.amount} credits for activation ${activationId}`);
+        } else {
+          await this.prismaService.smsActivation.update({
+            where: { activationId },
+            data: updateData,
+          });
+        }
+      } else {
+        await this.prismaService.smsActivation.update({
+          where: { activationId },
+          data: updateData,
+        });
+      }
+
       return { status: 'received' };
     } catch (error) {
       if (error instanceof NotFoundException) {
@@ -59,4 +105,6 @@ export class SmsController {
       throw new BadRequestException('Failed to process webhook: ' + error.message);
     }
   }
+
+  private readonly logger = new Logger(SmsController.name);
 }

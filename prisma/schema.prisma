@@ -8,36 +8,58 @@ generator client {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  balance   Float    @default(0.0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  transactions Transaction[]
+  id            Int            @id @default(autoincrement())
+  email         String         @unique
+  password      String
+  balance       Float          @default(0.0)
+  role          String         @default("USER") // "USER" | "ADMIN"
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  transactions  Transaction[]
   smsActivations SmsActivation[]
 }
 
 model Transaction {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
-  amount    Float
-  type      String   // "CREDIT" | "DEBIT"
-  status    String   // "PENDING" | "COMPLETED" | "FAILED"
-  createdAt DateTime @default(now())
+  id             Int           @id @default(autoincrement())
+  userId         Int
+  user           User          @relation(fields: [userId], references: [id])
+  amount         Float
+  type           String        // "CREDIT" | "DEBIT" | "REFUNDED"
+  status         String        // "PENDING" | "COMPLETED" | "FAILED"
+  description    String?       // Optional description
+  smsActivationId Int?         // Link to SmsActivation for refunds
+  smsActivation  SmsActivation? @relation(fields: [smsActivationId], references: [id])
+  createdAt      DateTime      @default(now())
 }
 
 model SmsActivation {
-  id           Int      @id @default(autoincrement())
+  id           Int           @id @default(autoincrement())
   userId       Int
-  user         User     @relation(fields: [userId], references: [id])
-  service      String   // Ex.: "wa_0" (WhatsApp sem redirecionamento)
+  user         User          @relation(fields: [userId], references: [id])
+  service      String        // Ex.: "wa_0" (WhatsApp sem redirecionamento)
   country      String
   number       String
   code         String?
-  status       String   // "PENDING" | "COMPLETED" | "CANCELLED"
-  activationId String?  @unique // ID da ativação retornado pelo SMS-Activate
+  status       String        // "PENDING" | "COMPLETED" | "CANCELLED"
+  activationId String?       @unique // ID da ativação retornado pelo SMS-Activate
+  transactions Transaction[]  // Link to transactions
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Markup {
+  id           Int      @id @default(autoincrement())
+  percentage   Float    // Percentage markup (e.g., 20 for 20%)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ServicePrice {
+  id           Int      @id @default(autoincrement())
+  service      String   // SMS-Activate service code (e.g., "wa_0")
+  country      String   // Country code (e.g., "0" for Russia)
+  priceUsd     Float    // Original price in USD from SMS-Activate
+  priceBrl     Float    // Marked-up price in BRL (after conversion and markup)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

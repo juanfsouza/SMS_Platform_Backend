@@ -1,12 +1,12 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, UnauthorizedException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { createHmac } from 'crypto';
 import { lastValueFrom } from 'rxjs';
 
 @Injectable()
 export class PaymentsService {
-  private readonly apiUrl = 'https://api.pushinpay.com/v1/payments';
   private readonly logger = new Logger(PaymentsService.name);
 
   constructor(
@@ -15,61 +15,77 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async createPayment(userId: number, amount: number) {
-    const apiKey = this.configService.get('pushinpay.apiKey');
-    try {
-      const transaction = await this.prisma.transaction.create({
-        data: {
-          userId,
-          amount,
-          type: 'CREDIT',
-          status: 'PENDING',
-        },
-      });
+  async handlePaymentWebhook(payload: any, signature: string) {
+    const webhookSecret = this.configService.get('pushinpay.webhookSecret');
+    const expectedSignature = createHmac('sha256', webhookSecret)
+      .update(JSON.stringify(payload))
+      .digest('hex');
 
+    if (signature !== expectedSignature) {
+      this.logger.error('Invalid webhook signature');
+      throw new UnauthorizedException('Invalid webhook signature');
+    }
+
+    const { id, status, value, userId } = payload;
+    if (status !== 'paid') {
+      this.logger.log(`Webhook received, but status is ${status}. No action taken.`);
+      return { status: 'received' };
+    }
+
+    try {
+      const amount = parseFloat(value);
+      const transaction = await this.prisma.$transaction([
+        this.prisma.transaction.create({
+          data: {
+            userId,
+            amount,
+            type: 'CREDIT',
+            status: 'COMPLETED',
+          },
+        }),
+        this.prisma.user.update({
+          where: { id: userId },
+          data: { balance: { increment: amount } },
+        }),
+      ]);
+
+      this.logger.log(`Credits added: ${amount} for user ${userId}`);
+      return {
+        transactionId: transaction[0].id,
+        amount,
+        status: 'processed',
+      };
+    } catch (error) {
+      this.logger.error(`Failed to process webhook: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to process webhook: ${error.message}`);
+    }
+  }
+
+  async createCheckoutLink(userId: number, amount: number): Promise<string> {
+    const apiKey = this.configService.get('pushinpay.apiKey');
+    const apiUrl = 'https://api.pushinpay.com.br/v1/pix/cashIn';
+    try {
       const response = await lastValueFrom(
         this.httpService.post(
-          this.apiUrl,
+          apiUrl,
           {
-            amount,
-            currency: 'BRL',
-            description: 'Recarga de créditos',
+            value: amount,
+            webhook_url: 'https://your-domain.com/payments/webhook',
             userId,
           },
           {
             headers: {
               Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
             },
           },
         ),
       );
       this.logger.log(`PushinPay API response: ${JSON.stringify(response.data)}`);
-
-      await this.prisma.$transaction([
-        this.prisma.user.update({
-          where: { id: userId },
-          data: { balance: { increment: amount } },
-        }),
-        this.prisma.transaction.update({
-          where: { id: transaction.id },
-          data: { status: 'COMPLETED' },
-        }),
-      ]);
-
-      return {
-        transactionId: transaction.id,
-        amount,
-        paymentDetails: response.data,
-      };
+      return response.data.qr_code_url || response.data.payment_url; // Adjust based on PushinPay response
     } catch (error) {
-      this.logger.error(`Failed to create payment: ${error.message}`, error.stack);
-      if (error.response?.status === 404) {
-        throw new BadRequestException('PushinPay API endpoint not found. Please check the API URL.');
-      }
-      if (error.response?.data?.message) {
-        throw new BadRequestException(`PushinPay API error: ${error.response.data.message}`);
-      }
-      throw new BadRequestException(`Failed to create payment: ${error.message}`);
+      this.logger.error(`Failed to create checkout link: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to create checkout link: ${error.message}`);
     }
   }
 }

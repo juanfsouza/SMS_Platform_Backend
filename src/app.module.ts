@@ -10,6 +10,7 @@ import { UsersModule } from './users/users.module';
 import { CreditsModule } from './credits/credits.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
+import { ScheduleModule } from '@nestjs/schedule';
 import configuration from './config/configuration';
 
 @Module({
@@ -18,6 +19,7 @@ import configuration from './config/configuration';
       load: [configuration],
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     BullModule.forRoot({
       redis: {
         host: process.env.REDIS_HOST || 'localhost',

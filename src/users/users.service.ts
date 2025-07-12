@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { UpdateUserDto } from './dtos/users.dto';
@@ -16,6 +16,89 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return user;
+  }
+
+  async getUserBalance(id: number): Promise<{ balance: number }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { balance: true },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return { balance: user.balance };
+  }
+
+  async addUserBalance(id: number, amount: number): Promise<{ balance: number }> {
+    if (amount <= 0) {
+      throw new BadRequestException('Amount must be positive');
+    }
+    const user = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { balance: { increment: amount } },
+      }),
+      this.prisma.transaction.create({
+        data: {
+          userId: id,
+          amount,
+          type: 'CREDIT',
+          status: 'COMPLETED',
+          description: 'Manual balance addition',
+        },
+      }),
+    ]);
+    if (!user[0]) {
+      throw new NotFoundException('User not found');
+    }
+    return { balance: user[0].balance };
+  }
+
+  async updateUserBalance(id: number, balance: number): Promise<{ balance: number }> {
+    if (balance < 0) {
+      throw new BadRequestException('Balance cannot be negative');
+    }
+    const user = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { balance },
+      }),
+      this.prisma.transaction.create({
+        data: {
+          userId: id,
+          amount: balance,
+          type: 'UPDATE',
+          status: 'COMPLETED',
+          description: 'Manual balance update',
+        },
+      }),
+    ]);
+    if (!user[0]) {
+      throw new NotFoundException('User not found');
+    }
+    return { balance: user[0].balance };
+  }
+
+  async resetUserBalance(id: number): Promise<{ balance: number }> {
+    const user = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { balance: 0 },
+      }),
+      this.prisma.transaction.create({
+        data: {
+          userId: id,
+          amount: 0,
+          type: 'RESET',
+          status: 'COMPLETED',
+          description: 'Balance reset',
+        },
+      }),
+    ]);
+    if (!user[0]) {
+      throw new NotFoundException('User not found');
+    }
+    return { balance: user[0].balance };
   }
 
   async updateUser(id: number, data: UpdateUserDto) {

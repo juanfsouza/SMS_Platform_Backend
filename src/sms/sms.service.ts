@@ -1,8 +1,10 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { lastValueFrom } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreditsService } from '../credits/credits.service';
+import { mapToSmsActivateCodes } from './dtos/buy-sms.dto';
 
 @Injectable()
 export class SmsService {
@@ -13,6 +15,7 @@ export class SmsService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly creditsService: CreditsService,
   ) {}
 
   async getNumbersStatus(country: string, operator: string): Promise<any> {
@@ -31,30 +34,70 @@ export class SmsService {
 
   async getNumber(service: string, country: string, userId: number): Promise<any> {
     const apiKey = this.configService.get('smsActivate.apiKey');
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // Map user-facing codes to SMS-Activate codes
+    const { service: mappedService, country: mappedCountry } = mapToSmsActivateCodes(service, country);
+
+    const { priceBrl, priceUsd } = await this.creditsService.getServicePrice(mappedService, mappedCountry);
+    if (user.balance < priceBrl) {
+      throw new ForbiddenException(`Insufficient credits. Required: ${priceBrl} credits, Available: ${user.balance} credits`);
+    }
+
     try {
+      this.logger.log(`Requesting number for service: ${service}, country: ${country}, mapped to service: ${mappedService}, country: ${mappedCountry}, expected price: ${priceUsd} USD`);
       const response = await lastValueFrom(
         this.httpService.get(`${this.apiUrl}?api_key=${apiKey}&action=getNumber&service=${service}&country=${country}`),
       );
       this.logger.log(`getNumber response: ${response.data}`);
-      
+
       const [status, activationId, phoneNumber] = response.data.split(':');
       if (status !== 'ACCESS_NUMBER') {
         throw new BadRequestException(`Failed to get number: Invalid status "${status}" from SMS-Activate`);
       }
 
-      // Salvar ativação no banco
-      const activation = await this.prisma.smsActivation.create({
-        data: {
-          userId,
-          service,
-          country,
-          number: phoneNumber,
-          status: 'PENDING',
-          activationId,
-        },
+      const activation = await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id: userId },
+          data: { balance: { decrement: priceBrl } },
+        }),
+        this.prisma.smsActivation.create({
+          data: {
+            userId,
+            service: mappedService,
+            country: mappedCountry,
+            number: phoneNumber,
+            status: 'PENDING',
+            activationId,
+          },
+        }),
+        this.prisma.transaction.create({
+          data: {
+            userId,
+            amount: priceBrl,
+            type: 'DEBIT',
+            status: 'COMPLETED',
+            description: `SMS purchase: ${service} (${country}), charged ${priceUsd} USD`,
+            smsActivationId: null,
+          },
+        }),
+      ]);
+
+      await this.prisma.transaction.update({
+        where: { id: activation[2].id },
+        data: { smsActivationId: activation[1].id },
       });
 
-      return { activationId, phoneNumber, activationIdFromDb: activation.id };
+      this.logger.warn(`Please verify SMS-Activate account balance to confirm if ${priceUsd} USD was charged for activationId: ${activationId}`);
+      return {
+        activationId,
+        phoneNumber,
+        activationIdFromDb: activation[1].id,
+        creditsSpent: priceBrl,
+      };
     } catch (error) {
       this.logger.error(`Failed to get number: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to get number: ${error.message}`);
