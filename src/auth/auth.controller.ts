@@ -1,20 +1,7 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { z } from 'zod';
+import { RegisterDto, LoginDto } from './dtos/auth.dto';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
-
-const RegisterDto = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-});
-
-const LoginDto = z.object({
-  email: z.string().email(),
-  password: z.string(),
-});
-
-type RegisterDto = z.infer<typeof RegisterDto>;
-type LoginDto = z.infer<typeof LoginDto>;
 
 @Controller('auth')
 export class AuthController {
@@ -22,7 +9,7 @@ export class AuthController {
 
   @Post('register')
   async register(@Body(new ZodValidationPipe(RegisterDto)) body: RegisterDto) {
-    return this.authService.register(body.email, body.password);
+    return this.authService.register(body.name, body.email, body.password);
   }
 
   @Post('login')

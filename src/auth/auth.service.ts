@@ -5,12 +5,13 @@ import * as bcrypt from 'bcrypt';
 
 interface User {
   id: number;
+  name: string;
   email: string;
   password: string;
-  balance?: number;
+  balance: number;
   role: string;
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 @Injectable()
@@ -20,17 +21,19 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(email: string, password: string) {
+  async register(name: string, email: string, password: string) {
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
       const user = await this.prisma.user.create({
         data: {
+          name,
           email,
           password: hashedPassword,
+          balance: 0,
           role: 'USER',
         },
       });
-      return this.generateToken(user);
+      return this.generateResponse(user);
     } catch (error) {
       if (error.code === 'P2002') {
         throw new ConflictException('Email already exists');
@@ -44,13 +47,19 @@ export class AuthService {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    return this.generateToken(user);
+    return this.generateResponse(user);
   }
 
-  private generateToken(user: User) {
+  private generateResponse(user: User) {
     const payload = { id: user.id, email: user.email, role: user.role };
     return {
-      access_token: this.jwtService.sign(payload),
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        balance: user.balance,
+      },
+      token: this.jwtService.sign(payload),
     };
   }
 }
