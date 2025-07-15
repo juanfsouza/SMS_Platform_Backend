@@ -8,8 +8,8 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  async register(@Body(new ZodValidationPipe(RegisterDto)) body: RegisterDto) {
-    return this.authService.register(body.name, body.email, body.password);
+  async register(@Body(new ZodValidationPipe(RegisterDto)) body: RegisterDto & { affiliateCode?: string }) {
+    return this.authService.register(body.name, body.email, body.password, body.affiliateCode);
   }
 
   @Post('login')

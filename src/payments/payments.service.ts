@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger, UnauthorizedException } from '
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { AffiliateService } from '../affiliate/affiliate.service';
 import { createHmac } from 'crypto';
 import { lastValueFrom } from 'rxjs';
 
@@ -13,6 +14,7 @@ export class PaymentsService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly affiliateService: AffiliateService,
   ) {}
 
   async handlePaymentWebhook(payload: any, signature: string) {
@@ -41,6 +43,7 @@ export class PaymentsService {
             amount,
             type: 'CREDIT',
             status: 'COMPLETED',
+            description: 'User deposit via PushinPay',
           },
         }),
         this.prisma.user.update({
@@ -48,6 +51,8 @@ export class PaymentsService {
           data: { balance: { increment: amount } },
         }),
       ]);
+
+      await this.affiliateService.creditCommission(userId, amount);
 
       this.logger.log(`Credits added: ${amount} for user ${userId}`);
       return {
@@ -61,7 +66,7 @@ export class PaymentsService {
     }
   }
 
-  async createCheckoutLink(userId: number, amount: number): Promise<string> {
+  async createCheckoutLink(userId: number, amount: number, affiliateCode?: string): Promise<string> {
     const apiKey = this.configService.get('pushinpay.apiKey');
     const apiUrl = 'https://api.pushinpay.com.br/v1/pix/cashIn';
     try {
@@ -72,6 +77,7 @@ export class PaymentsService {
             value: amount,
             webhook_url: 'https://your-domain.com/payments/webhook',
             userId,
+            affiliateCode,
           },
           {
             headers: {
@@ -82,7 +88,7 @@ export class PaymentsService {
         ),
       );
       this.logger.log(`PushinPay API response: ${JSON.stringify(response.data)}`);
-      return response.data.qr_code_url || response.data.payment_url; // Adjust based on PushinPay response
+      return response.data.qr_code_url || response.data.payment_url;
     } catch (error) {
       this.logger.error(`Failed to create checkout link: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to create checkout link: ${error.message}`);

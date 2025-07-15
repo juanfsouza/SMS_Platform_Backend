@@ -4,9 +4,10 @@ import { PaymentsController } from './payments.controller';
 import { HttpModule } from '@nestjs/axios';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ConfigModule } from '@nestjs/config';
+import { AffiliateModule } from '../affiliate/affiliate.module';
 
 @Module({
-  imports: [HttpModule, PrismaModule, ConfigModule],
+  imports: [HttpModule, PrismaModule, ConfigModule, AffiliateModule], 
   controllers: [PaymentsController],
   providers: [PaymentsService],
 })

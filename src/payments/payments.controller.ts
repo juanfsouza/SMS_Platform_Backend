@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 const CreateCheckoutDto = z.object({
   amount: z.number().positive().min(1, 'Amount must be at least 1'),
+  affiliateCode: z.string().optional(),
 });
 
 type CreateCheckoutDto = z.infer<typeof CreateCheckoutDto>;
@@ -21,7 +22,7 @@ export class PaymentsController {
     if (!userId) {
       throw new UnauthorizedException('User not authenticated');
     }
-    return this.paymentsService.createCheckoutLink(userId, body.amount);
+    return this.paymentsService.createCheckoutLink(userId, body.amount, body.affiliateCode);
   }
 
   @Post('webhook')

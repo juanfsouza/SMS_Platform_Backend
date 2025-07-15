@@ -8,16 +8,22 @@ generator client {
 }
 
 model User {
-  id            Int            @id @default(autoincrement())
-  email         String         @unique
-  name          String
-  password      String
-  balance       Float          @default(0.0)
-  role          String         @default("USER") // "USER" | "ADMIN"
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  transactions  Transaction[]
-  smsActivations SmsActivation[]
+  id                Int                @id @default(autoincrement())
+  email             String             @unique
+  name              String
+  password          String
+  balance           Float              @default(0.0)
+  affiliateBalance  Float              @default(0.0) // Separate balance for affiliate earnings
+  pixKey            String?            // Optional PIX key for withdrawals
+  role              String             @default("USER") // "USER" | "ADMIN"
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  transactions      Transaction[]
+  smsActivations    SmsActivation[]
+  affiliateLinks    AffiliateLink[]    @relation(name: "AffiliateLink")
+  referredByLink    AffiliateLink?     @relation(name: "ReferredBy", fields: [referredByLinkId], references: [id])
+  referredByLinkId  Int?               // Links to the affiliate who referred this user
+  withdrawalRequests WithdrawalRequest[]
 }
 
 model Transaction {
@@ -25,7 +31,7 @@ model Transaction {
   userId         Int
   user           User          @relation(fields: [userId], references: [id])
   amount         Float
-  type           String        // "CREDIT" | "DEBIT" | "REFUNDED"
+  type           String        // "CREDIT" | "DEBIT" | "REFUNDED" | "AFFILIATE_CREDIT" | "WITHDRAWAL"
   status         String        // "PENDING" | "COMPLETED" | "FAILED"
   description    String?       // Optional description
   smsActivationId Int?         // Link to SmsActivation for refunds
@@ -61,6 +67,33 @@ model ServicePrice {
   country      String   // Country code (e.g., "0" for Russia)
   priceUsd     Float    // Original price in USD from SMS-Activate
   priceBrl     Float    // Marked-up price in BRL (after conversion and markup)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AffiliateLink {
+  id           Int           @id @default(autoincrement())
+  userId       Int
+  user         User          @relation(name: "AffiliateLink", fields: [userId], references: [id])
+  code         String        @unique // Unique affiliate code
+  referredUsers User[]        @relation(name: "ReferredBy") // Users referred by this link
+  createdAt    DateTime      @default(now())
+}
+
+model WithdrawalRequest {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id])
+  amount       Float
+  pixKey       String
+  status       String   // "PENDING" | "APPROVED" | "CANCELLED"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AffiliateCommission {
+  id           Int      @id @default(autoincrement())
+  percentage   Float    // Affiliate commission percentage (e.g., 10 for 10%)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

@@ -10,7 +10,7 @@ export class UsersService {
   async getUserById(id: number) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, email: true, balance: true, createdAt: true, updatedAt: true },
+      select: { id: true, email: true, name: true, balance: true, affiliateBalance: true, createdAt: true, updatedAt: true },
     });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -18,15 +18,15 @@ export class UsersService {
     return user;
   }
 
-  async getUserBalance(id: number): Promise<{ balance: number }> {
+  async getUserBalance(id: number): Promise<{ balance: number, affiliateBalance: number }> {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { balance: true },
+      select: { balance: true, affiliateBalance: true },
     });
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return { balance: user.balance };
+    return { balance: user.balance, affiliateBalance: user.affiliateBalance };
   }
 
   async addUserBalance(id: number, amount: number): Promise<{ balance: number }> {
@@ -110,10 +110,13 @@ export class UsersService {
       if (data.password) {
         updateData.password = await bcrypt.hash(data.password, 10);
       }
+      if (data.pixKey) {
+        updateData.pixKey = data.pixKey;
+      }
       const user = await this.prisma.user.update({
         where: { id },
         data: updateData,
-        select: { id: true, email: true, balance: true, createdAt: true, updatedAt: true },
+        select: { id: true, email: true, name: true, balance: true, affiliateBalance: true, createdAt: true, updatedAt: true },
       });
       return user;
     } catch (error) {

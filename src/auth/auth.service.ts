@@ -9,6 +9,7 @@ interface User {
   email: string;
   password: string;
   balance: number;
+  affiliateBalance: number;
   role: string;
   createdAt: Date;
   updatedAt: Date;
@@ -21,16 +22,27 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async register(name: string, email: string, password: string) {
+  async register(name: string, email: string, password: string, affiliateCode?: string) {
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
+      let referredByLinkId: number | undefined;
+
+      if (affiliateCode) {
+        const affiliateLink = await this.prisma.affiliateLink.findUnique({ where: { code: affiliateCode } });
+        if (affiliateLink) {
+          referredByLinkId = affiliateLink.id;
+        }
+      }
+
       const user = await this.prisma.user.create({
         data: {
           name,
           email,
           password: hashedPassword,
           balance: 0,
+          affiliateBalance: 0,
           role: 'USER',
+          referredByLinkId,
         },
       });
       return this.generateResponse(user);
@@ -58,6 +70,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         balance: user.balance,
+        affiliateBalance: user.affiliateBalance,
       },
       token: this.jwtService.sign(payload),
     };

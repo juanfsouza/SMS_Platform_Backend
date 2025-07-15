@@ -54,53 +54,52 @@ export class CreditsService {
     const exchangeRate = parseFloat(this.configService.get('usdBrlExchangeRate') || '5.5');
     const adminMarkupPercentage = await this.getMarkupPercentage();
     const priceRecords: Array<{ service: string; country: string; priceUsd: number; priceBrl: number }> = [];
-    const validServices = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '204']; 
 
     const countryMap = await this.countryMapService.getCountryMap();
     const countryCodes = Object.keys(countryMap);
+    this.logger.log(`Country map has ${countryCodes.length} countries: ${countryCodes.join(', ')}`);
 
-    this.logger.log(`Fetching prices for ${validServices.length} services and ${countryCodes.length} countries`);
+    this.logger.log(`Fetching prices for all countries and services`);
 
     try {
       const response = await lastValueFrom(
         this.httpService.get(`${this.smsActivateApiUrl}?api_key=${apiKey}&action=getPrices`),
       );
       const prices = response.data;
-      this.logger.debug(`Fetched SMS-Activate prices: ${JSON.stringify(prices)}`);
+      this.logger.debug(`Fetched SMS-Activate prices: ${JSON.stringify(prices, null, 2)}`);
 
       if (!prices || typeof prices !== 'object') {
         throw new BadRequestException('Invalid SMS-Activate prices response');
       }
 
-      const foundServices = new Set(Object.keys(prices));
-      for (const service of validServices) {
-        if (!foundServices.has(service)) {
-          this.logger.warn(`Service ${service} not found in SMS-Activate prices response. Contact SMS-Activate support.`);
-        }
-      }
+      const countryIds = Object.keys(prices);
+      this.logger.log(`Found ${countryIds.length} country IDs from SMS-Activate API: ${countryIds.join(', ')}`);
 
-      for (const service of validServices) {
-        const countries = prices[service];
-        if (!countries || typeof countries !== 'object') {
-          this.logger.warn(`No countries found for service: ${service}`);
+      for (const countryId of countryIds) {
+        if (!countryCodes.includes(countryId)) {
+          this.logger.warn(`Country ID ${countryId} not found in countryMap, skipping`);
           continue;
         }
-        for (const country in countries) {
-          const numericCountryCode = Object.keys(countryMap).find((code) => countryMap[code] === country);
-          if (!numericCountryCode) {
-            this.logger.warn(`Country ${country} not found in countryMap, using as-is from getPrices`);
-          }
-          const priceUsdBase = parseFloat(countries[country].cost);
+        const services = prices[countryId];
+        if (!services || typeof services !== 'object') {
+          this.logger.warn(`No services found for country ID: ${countryId}`);
+          continue;
+        }
+        const serviceCodes = Object.keys(services);
+        this.logger.debug(`Country ${countryId} has ${serviceCodes.length} services: ${serviceCodes.join(', ')}`);
+        for (const service of serviceCodes) {
+          const priceData = services[service];
+          const priceUsdBase = parseFloat(priceData.cost);
           if (isNaN(priceUsdBase) || priceUsdBase <= 0) {
-            this.logger.warn(`Invalid price for service: ${service}, country: ${country}`);
+            this.logger.warn(`Invalid price for country: ${countryId}, service: ${service}, cost: ${priceData.cost}`);
             continue;
           }
 
           const priceUsd = priceUsdBase * this.FIXED_MARKUP;
           const priceBrl = priceUsd * exchangeRate * (1 + adminMarkupPercentage / 100);
           priceRecords.push({
-            service,
-            country,
+            service: countryId, // Country ID (e.g., "0" for Russia)
+            country: service, // Service code (e.g., "wa")
             priceUsd: parseFloat(priceUsd.toFixed(2)),
             priceBrl: parseFloat(priceBrl.toFixed(2)),
           });
@@ -108,15 +107,14 @@ export class CreditsService {
       }
 
       if (priceRecords.length === 0) {
-        this.logger.error('No valid prices found from SMS-Activate API after processing');
-        throw new BadRequestException('No valid prices found from SMS-Activate API');
+        this.logger.warn('No valid prices found from SMS-Activate API after processing, but proceeding with empty cache');
+      } else {
+        await this.prisma.$transaction([
+          this.prisma.servicePrice.deleteMany(),
+          this.prisma.servicePrice.createMany({ data: priceRecords }),
+        ]);
+        this.logger.log(`Cached ${priceRecords.length} service prices with 50% fixed markup and ${adminMarkupPercentage}% admin markup`);
       }
-
-      await this.prisma.$transaction([
-        this.prisma.servicePrice.deleteMany(),
-        this.prisma.servicePrice.createMany({ data: priceRecords }),
-      ]);
-      this.logger.log(`Cached ${priceRecords.length} service prices with 50% fixed markup and ${adminMarkupPercentage}% admin markup`);
     } catch (error) {
       this.logger.error(`Failed to fetch SMS-Activate prices: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to fetch SMS-Activate prices: ${error.message}`);
@@ -138,8 +136,27 @@ export class CreditsService {
       select: { service: true, country: true, priceBrl: true, priceUsd: true },
     });
     if (prices.length === 0) {
-      throw new BadRequestException('No prices available. Please refresh prices.');
+      this.logger.warn('No prices available in cache');
     }
+    this.logger.log(`Returning ${prices.length} service prices`);
+    return prices;
+  }
+
+  async getFilteredServicePrices(
+    where: { service?: string; country?: string | string[] },
+    limit: number,
+    offset: number,
+  ): Promise<Array<{ service: string; country: string; priceBrl: number; priceUsd: number }>> {
+    const query: any = {};
+    if (where.service) query.country = Array.isArray(where.country) ? { in: where.country } : where.country;
+    if (where.country) query.service = where.service;
+    const prices = await this.prisma.servicePrice.findMany({
+      where: query,
+      select: { service: true, country: true, priceBrl: true, priceUsd: true },
+      take: limit,
+      skip: offset,
+    });
+    this.logger.log(`Returning ${prices.length} filtered service prices`);
     return prices;
   }
 

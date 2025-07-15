@@ -1,20 +1,64 @@
 import { z } from 'zod';
 import { CountryMapService } from '../country-map.service';
 
-const SERVICE_MAP: Record<string, string> = {
-  wa: '0', // WhatsApp
-  tg: '1', // Telegram
-  vk: '2', // VK
-  ok: '3', // OK
-  wb: '4', // WeChat
-  go: '5', // Google
-  fb: '6', // Facebook
-  tw: '7', // Twitter
-  lf: '8', // Tiktok
-  ot: '204', // Other
-};
+const VALID_SERVICES = [
+  'wa', // WhatsApp
+  'tg', // Telegram
+  'vk', // VK
+  'ok', // OK
+  'wb', // WeChat
+  'go', // Google
+  'fb', // Facebook
+  'tw', // Twitter
+  'lf', // TikTok
+  'ot', // Other
+  'baa', 'bax', 'baw', 'aa', 'ac', 'ad', 'ae', 'ah', 'ai', 'ak', 'am', 'bbm', 'an', 'bbl', 'ao', 'bbo', 'aq', 'ar', 'bbs', 'at', 'av', 'bbt', 'aw', 'ax', 'bbv', 'ba', 'bd', // Add more from getPrices
+  // Add all service codes from getPrices logs
+];
 
-const VALID_SERVICES = Object.keys(SERVICE_MAP);
+export const SERVICE_NAME_MAP: Record<string, string> = {
+  wa: 'WhatsApp',
+  tg: 'Telegram',
+  vk: 'VK',
+  ok: 'OK',
+  wb: 'WeChat',
+  go: 'Google',
+  fb: 'Facebook',
+  tw: 'Twitter',
+  ig: 'Instagram',
+  lf: 'TikTok',
+  ot: 'Other',
+  baa: 'Wirex',
+  bax: 'Теремок',
+  baw: 'Leadgid',
+  dh: 'Ebay',
+  aa: 'Probo',
+  ee: 'Twilio',
+  hb: 'Twitch',
+  ahb: 'Ubisoft',
+  kf: 'Weibo',
+  rc: 'Skype',
+  am: 'Amazon',
+  ds: 'Discord',
+  an: 'AliExpress',
+  bbl: 'Autodesk',
+  ts: 'PayPal',
+  nf: 'Netflix',
+  mm: 'Microsoft',
+  tn: 'LinkedIn',
+  ew: 'Nike',
+  mt: 'Steam',
+  oi: 'Tinder',
+  ya: 'Uber',
+  uk: 'Airbnb',
+  my: 'Caixa',
+  ip: 'Burger King',
+  bz: 'Blizzard',
+  aon: 'Binace',
+  zs: 'Bilibili',
+  blm: 'Epic Games',
+  vp: 'Kwai',
+};
 
 export const BuySmsDto = z.object({
   service: z.string().refine((val) => VALID_SERVICES.includes(val), {
@@ -33,8 +77,8 @@ export const mapToSmsActivateCodes = async (
     throw new Error(`Invalid country code: ${country}. Available codes: ${Object.keys(countryMap).join(', ')}`);
   }
   return {
-    service: SERVICE_MAP[service] || service,
-    country: countryMap[country] || country,
+    service: service,
+    country: country,
   };
 };
 
