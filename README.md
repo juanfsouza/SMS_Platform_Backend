@@ -93,6 +93,7 @@ src/
 - **Ativação de SMS**: Integração com SMS-Activate API
 - **Pagamentos**: Processamento via PushinPay
 - **Filas**: Processamento assíncrono com Bull/Redis
+- **Afiliados**: Sistema de indicação, com geração de link, saldo de afiliado e saques via PIX
 
 ## 🧪 Testes
 
@@ -125,3 +126,12 @@ npm run test:cov
 - `POST /sms/buy` - Compra de ativação SMS
 - `GET /sms/status/:id` - Status da ativação
 - `POST /sms/webhook` - Webhook para atualizações
+
+### Endpoints de Afiliados
+
+- `GET /affiliate/link` - Gera ou retorna o link de afiliado do usuário autenticado
+- `POST /affiliate/withdrawal` - Solicita saque do saldo de afiliado (mínimo 50 BRL, requer chave PIX)
+- `POST /affiliate/commission` - (ADMIN) Define a comissão de afiliados (%)
+- `GET /affiliate/commission` - (ADMIN) Consulta a comissão de afiliados (%)
+- `GET /affiliate/withdrawals` - (ADMIN) Lista solicitações de saque (filtro opcional por status)
+- `PATCH /affiliate/withdrawals/:id` - (ADMIN) Aprova ou cancela uma solicitação de saque
