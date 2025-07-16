@@ -98,8 +98,8 @@ export class CreditsService {
           const priceUsd = priceUsdBase * this.FIXED_MARKUP;
           const priceBrl = priceUsd * exchangeRate * (1 + adminMarkupPercentage / 100);
           priceRecords.push({
-            service: countryId, // Country ID (e.g., "0" for Russia)
-            country: service, // Service code (e.g., "wa")
+            service: countryId,
+            country: service, 
             priceUsd: parseFloat(priceUsd.toFixed(2)),
             priceBrl: parseFloat(priceBrl.toFixed(2)),
           });

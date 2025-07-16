@@ -129,4 +129,10 @@ export class UsersService {
       throw error;
     }
   }
+
+  async getAllUsers() {
+    return this.prisma.user.findMany({
+      select: { id: true, email: true, name: true, balance: true, affiliateBalance: true, createdAt: true, updatedAt: true },
+    });
+  }
 }

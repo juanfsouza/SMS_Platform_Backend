@@ -60,4 +60,15 @@ export class UsersController {
     }
     return this.usersService.updateUser(userId, body);
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @Get()
+  async getAllUsers(@Req() req) {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    return this.usersService.getAllUsers();
+  }
 }
