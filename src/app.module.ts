@@ -12,6 +12,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AffiliateModule } from './affiliate/affiliate.module';
+import { EmailModule } from './email/email.module';
 import configuration from './config/configuration';
 
 @Module({
@@ -35,6 +36,7 @@ import configuration from './config/configuration';
     PrismaModule,
     CommonModule,
     AffiliateModule,
+    EmailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

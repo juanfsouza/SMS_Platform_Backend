@@ -13,17 +13,19 @@ model User {
   name              String
   password          String
   balance           Float              @default(0.0)
-  affiliateBalance  Float              @default(0.0) // Separate balance for affiliate earnings
-  pixKey            String?            // Optional PIX key for withdrawals
-  role              String             @default("USER") // "USER" | "ADMIN"
+  affiliateBalance  Float              @default(0.0)
+  pixKey            String?
+  role              String             @default("USER")
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   transactions      Transaction[]
   smsActivations    SmsActivation[]
   affiliateLinks    AffiliateLink[]    @relation(name: "AffiliateLink")
   referredByLink    AffiliateLink?     @relation(name: "ReferredBy", fields: [referredByLinkId], references: [id])
-  referredByLinkId  Int?               // Links to the affiliate who referred this user
+  referredByLinkId  Int?
   withdrawalRequests WithdrawalRequest[]
+  emailVerified     Boolean            @default(false)
+  confirmationToken String?            @unique
 }
 
 model Transaction {
@@ -31,10 +33,10 @@ model Transaction {
   userId         Int
   user           User          @relation(fields: [userId], references: [id])
   amount         Float
-  type           String        // "CREDIT" | "DEBIT" | "REFUNDED" | "AFFILIATE_CREDIT" | "WITHDRAWAL"
-  status         String        // "PENDING" | "COMPLETED" | "FAILED"
-  description    String?       // Optional description
-  smsActivationId Int?         // Link to SmsActivation for refunds
+  type           String
+  status         String
+  description    String?
+  smsActivationId Int?
   smsActivation  SmsActivation? @relation(fields: [smsActivationId], references: [id])
   createdAt      DateTime      @default(now())
 }
@@ -43,30 +45,30 @@ model SmsActivation {
   id           Int           @id @default(autoincrement())
   userId       Int
   user         User          @relation(fields: [userId], references: [id])
-  service      String        // Ex.: "wa_0" (WhatsApp sem redirecionamento)
+  service      String
   country      String
   number       String
   code         String?
-  status       String        // "PENDING" | "COMPLETED" | "CANCELLED"
-  activationId String?       @unique // ID da ativação retornado pelo SMS-Activate
-  transactions Transaction[]  // Link to transactions
+  status       String
+  activationId String?       @unique
+  transactions Transaction[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 }
 
 model Markup {
   id           Int      @id @default(autoincrement())
-  percentage   Float    // Percentage markup (e.g., 20 for 20%)
+  percentage   Float
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
 
 model ServicePrice {
   id           Int      @id @default(autoincrement())
-  service      String   // SMS-Activate service code (e.g., "wa_0")
-  country      String   // Country code (e.g., "0" for Russia)
-  priceUsd     Float    // Original price in USD from SMS-Activate
-  priceBrl     Float    // Marked-up price in BRL (after conversion and markup)
+  service      String
+  country      String
+  priceUsd     Float
+  priceBrl     Float
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -75,8 +77,8 @@ model AffiliateLink {
   id           Int           @id @default(autoincrement())
   userId       Int
   user         User          @relation(name: "AffiliateLink", fields: [userId], references: [id])
-  code         String        @unique // Unique affiliate code
-  referredUsers User[]        @relation(name: "ReferredBy") // Users referred by this link
+  code         String        @unique
+  referredUsers User[]        @relation(name: "ReferredBy")
   createdAt    DateTime      @default(now())
 }
 
@@ -86,14 +88,14 @@ model WithdrawalRequest {
   user         User     @relation(fields: [userId], references: [id])
   amount       Float
   pixKey       String
-  status       String   // "PENDING" | "APPROVED" | "CANCELLED"
+  status       String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
 
 model AffiliateCommission {
   id           Int      @id @default(autoincrement())
-  percentage   Float    // Affiliate commission percentage (e.g., 10 for 10%)
+  percentage   Float
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }

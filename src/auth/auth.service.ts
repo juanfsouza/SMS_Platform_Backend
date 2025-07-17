@@ -2,30 +2,20 @@ import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
-
-interface User {
-  id: number;
-  name: string;
-  email: string;
-  password: string;
-  balance: number;
-  affiliateBalance: number;
-  role: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly emailService: EmailService,
   ) {}
 
   async register(name: string, email: string, password: string, affiliateCode?: string) {
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
-      let referredByLinkId: number | undefined;
+      let referredByLinkId: number | null = null;
 
       if (affiliateCode) {
         const affiliateLink = await this.prisma.affiliateLink.findUnique({ where: { code: affiliateCode } });
@@ -34,6 +24,7 @@ export class AuthService {
         }
       }
 
+      const confirmationToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
       const user = await this.prisma.user.create({
         data: {
           name,
@@ -43,9 +34,13 @@ export class AuthService {
           affiliateBalance: 0,
           role: 'USER',
           referredByLinkId,
+          confirmationToken,
+          emailVerified: false,
         },
       });
-      return this.generateResponse(user);
+
+      await this.emailService.sendConfirmationEmail(email, confirmationToken);
+      return { message: 'Usuário registrado com sucesso! Um e-mail de confirmação foi enviado.' };
     } catch (error) {
       if (error.code === 'P2002') {
         throw new ConflictException('Email already exists');
@@ -56,13 +51,32 @@ export class AuthService {
 
   async login(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    if (!user) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+    console.log('User from DB:', user); // Debug log
+    if (!(await bcrypt.compare(password, user.password))) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (!user.emailVerified) {
+      throw new UnauthorizedException('Por favor, confirme seu e-mail primeiro.');
     }
     return this.generateResponse(user);
   }
 
-  private generateResponse(user: User) {
+  async confirmEmail(token: string) {
+    const user = await this.prisma.user.findFirst({ where: { confirmationToken: token } });
+    if (!user) throw new UnauthorizedException('Token inválido ou expirado');
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerified: true, confirmationToken: null },
+    });
+    console.log('Updated user:', updatedUser); // Debug log
+    return { message: 'E-mail confirmado com sucesso!' };
+  }
+
+  private generateResponse(user: any) {
     const payload = { id: user.id, email: user.email, role: user.role };
     return {
       user: {
@@ -71,6 +85,7 @@ export class AuthService {
         email: user.email,
         balance: user.balance,
         affiliateBalance: user.affiliateBalance,
+        emailVerified: user.emailVerified,
       },
       token: this.jwtService.sign(payload),
     };

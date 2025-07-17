@@ -1,4 +1,4 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto } from './dtos/auth.dto';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
@@ -15,5 +15,10 @@ export class AuthController {
   @Post('login')
   async login(@Body(new ZodValidationPipe(LoginDto)) body: LoginDto) {
     return this.authService.login(body.email, body.password);
+  }
+
+  @Get('confirm-email')
+  async confirmEmail(@Query('token') token: string) {
+    return this.authService.confirmEmail(token);
   }
 }
