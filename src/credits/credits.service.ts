@@ -99,7 +99,7 @@ export class CreditsService {
           const priceBrl = priceUsd * exchangeRate * (1 + adminMarkupPercentage / 100);
           priceRecords.push({
             service: countryId,
-            country: service, 
+            country: service,
             priceUsd: parseFloat(priceUsd.toFixed(2)),
             priceBrl: parseFloat(priceBrl.toFixed(2)),
           });
@@ -142,21 +142,21 @@ export class CreditsService {
     return prices;
   }
 
-  async getFilteredServicePrices(
-    where: { service?: string; country?: string | string[] },
+ async getFilteredServicePrices(
+    where: { service?: string[]; country?: string[] },
     limit: number,
     offset: number,
   ): Promise<Array<{ service: string; country: string; priceBrl: number; priceUsd: number }>> {
     const query: any = {};
-    if (where.service) query.country = Array.isArray(where.country) ? { in: where.country } : where.country;
-    if (where.country) query.service = where.service;
+    if (where.service?.length) query.service = { in: where.service }; // Filter by multiple country IDs
+    if (where.country?.length) query.country = { in: where.country }; // Filter by multiple service codes
     const prices = await this.prisma.servicePrice.findMany({
       where: query,
       select: { service: true, country: true, priceBrl: true, priceUsd: true },
       take: limit,
       skip: offset,
     });
-    this.logger.log(`Returning ${prices.length} filtered service prices`);
+    this.logger.log(`Returning ${prices.length} filtered service prices for query: ${JSON.stringify(query)}`);
     return prices;
   }
 

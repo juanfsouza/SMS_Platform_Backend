@@ -45,17 +45,18 @@ export class CreditsController {
   async getFilteredServicePrices(
     @Query('service') service?: string,
     @Query('country') country?: string,
-    @Query('limit') limit: string = '10',
+    @Query('limit') limit: string = '1000',
     @Query('offset') offset: string = '0',
   ) {
     const where = {};
-    if (service) where['country'] = service.split(',');
-    if (country) where['service'] = country;
+    if (service) where['service'] = service.split(',').map(id => id.trim()); // Array of country IDs
+    if (country) where['country'] = country.split(',').map(code => code.trim()); // Array of service codes
     const prices = await this.creditsService.getFilteredServicePrices(
       where,
       parseInt(limit),
       parseInt(offset),
     );
+    console.log('Filtered prices:', prices.map((p) => ({ service: p.service, country: p.country })));
     return prices;
   }
 
