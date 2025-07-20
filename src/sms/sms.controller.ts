@@ -9,6 +9,8 @@ import { StatusDto } from './dtos/status.dto';
 
 @Controller('sms')
 export class SmsController {
+  private readonly logger = new Logger(SmsController.name);
+
   constructor(
     private readonly smsService: SmsService,
     private readonly prismaService: PrismaService,
@@ -29,9 +31,73 @@ export class SmsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('status/:activationId')
-  async getStatus(@Param('activationId') activationId: string): Promise<StatusDto> {
+  async getStatus(@Param('activationId') activationId: string, @Req() req): Promise<any> {
+    const userId = req.user.id;
     const status = await this.smsService.getActivationStatus(activationId);
-    return StatusDto.parse(status);
+
+    // Parsear o status usando StatusDto
+    const parsedStatus = StatusDto.parse(status);
+
+    // Buscar informações adicionais do banco de dados
+    const activation = await this.prismaService.smsActivation.findUnique({
+      where: { activationId },
+      include: { transactions: true },
+    });
+
+    if (!activation || activation.userId !== userId) {
+      throw new NotFoundException(`No SmsActivation record found for activationId: ${activationId}`);
+    }
+
+    // Montar a resposta no formato desejado
+    return {
+      status: parsedStatus.status,
+      array: [
+        {
+          id: activation.activationId,
+          userid: activation.userId.toString(),
+          service: activation.service,
+          phone: activation.number,
+          cost: activation.transactions.find((t) => t.type === 'DEBIT')?.amount || 0,
+          status: parsedStatus.status === 'success' ? '2' : parsedStatus.status === 'pending' ? '1' : '8',
+          moreCodes: Buffer.from(JSON.stringify([parsedStatus.code])).toString('base64'),
+          moreSms: Buffer.from(
+            JSON.stringify([parsedStatus.code ? `${parsedStatus.code} é seu código de ${activation.service}. Não o compartilhe.` : '']),
+          ).toString('base64'),
+          createDate: Math.floor(activation.createdAt.getTime() / 1000),
+          receiveSmsDate: parsedStatus.code ? Math.floor(Date.now() / 1000) : 0,
+          estDate: Math.floor(activation.createdAt.getTime() / 1000 + 3600),
+          finishDate: parsedStatus.status === 'success' ? -62169993017 : 0,
+          forward: '0',
+          ref: '0',
+          country: activation.country,
+          addSms: '1',
+          countryCode: activation.country,
+          activationType: '0',
+          currency: 840,
+          code: parsedStatus.code || '',
+          smsText: parsedStatus.code ? `${parsedStatus.code} é seu código de ${activation.service}. Não o compartilhe.` : '',
+          seconds: 3600,
+          operator: null,
+          hint: 0,
+          name: `${activation.service}+Threads`,
+        },
+      ],
+      time: new Date().toISOString().slice(0, 19).replace('T', ' '),
+      stat: [],
+      quant: 1,
+      totalCount: 1,
+      order: 'id',
+      orderBy: 'desc',
+      needSound: false,
+      currentTime: Math.floor(Date.now() / 1000),
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('activations/recent')
+  async getRecentActivations(@Req() req) {
+    const userId = req.user.id;
+    return this.smsService.getRecentActivations(userId);
   }
 
   @Post('webhook')
@@ -52,18 +118,15 @@ export class SmsController {
       };
 
       if (status === '8') {
-        // Find the DEBIT transaction associated with this activation
         const debitTransaction = activation.transactions.find(
           (t) => t.type === 'DEBIT' && t.status === 'COMPLETED' && t.smsActivationId === activation.id,
         );
         if (debitTransaction && debitTransaction.amount > 0) {
           await this.prismaService.$transaction([
-            // Refund credits to user
             this.prismaService.user.update({
               where: { id: activation.userId },
               data: { balance: { increment: debitTransaction.amount } },
             }),
-            // Record refund transaction
             this.prismaService.transaction.create({
               data: {
                 userId: activation.userId,
@@ -105,6 +168,4 @@ export class SmsController {
       throw new BadRequestException('Failed to process webhook: ' + error.message);
     }
   }
-
-  private readonly logger = new Logger(SmsController.name);
 }

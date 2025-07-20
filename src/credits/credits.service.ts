@@ -1,9 +1,9 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../prisma/prisma.service';
 import { lastValueFrom } from 'rxjs';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { PrismaService } from '../prisma/prisma.service';
 import { CountryMapService } from '../sms/country-map.service';
 
 @Injectable()
@@ -98,8 +98,8 @@ export class CreditsService {
           const priceUsd = priceUsdBase * this.FIXED_MARKUP;
           const priceBrl = priceUsd * exchangeRate * (1 + adminMarkupPercentage / 100);
           priceRecords.push({
-            service: countryId,
-            country: service,
+            service: service, // Fixed: Use service code as service
+            country: countryId, // Fixed: Use countryId as country
             priceUsd: parseFloat(priceUsd.toFixed(2)),
             priceBrl: parseFloat(priceBrl.toFixed(2)),
           });
@@ -122,11 +122,18 @@ export class CreditsService {
   }
 
   async getServicePrice(service: string, country: string): Promise<{ priceBrl: number; priceUsd: number }> {
-    const price = await this.prisma.servicePrice.findFirst({
+    let price = await this.prisma.servicePrice.findFirst({
       where: { service, country },
     });
     if (!price) {
-      throw new BadRequestException(`Price not found for service ${service} and country ${country}. Please refresh prices.`);
+      this.logger.warn(`Price not found for service=${service}, country=${country}. Triggering price refresh.`);
+      await this.fetchAndCacheServicePrices();
+      price = await this.prisma.servicePrice.findFirst({
+        where: { service, country },
+      });
+      if (!price) {
+        throw new BadRequestException(`Price not found for service ${service} and country ${country} after refresh.`);
+      }
     }
     return { priceBrl: price.priceBrl, priceUsd: price.priceUsd };
   }
@@ -142,14 +149,14 @@ export class CreditsService {
     return prices;
   }
 
- async getFilteredServicePrices(
+  async getFilteredServicePrices(
     where: { service?: string[]; country?: string[] },
     limit: number,
     offset: number,
   ): Promise<Array<{ service: string; country: string; priceBrl: number; priceUsd: number }>> {
     const query: any = {};
-    if (where.service?.length) query.service = { in: where.service }; // Filter by multiple country IDs
-    if (where.country?.length) query.country = { in: where.country }; // Filter by multiple service codes
+    if (where.service?.length) query.service = { in: where.service };
+    if (where.country?.length) query.country = { in: where.country };
     const prices = await this.prisma.servicePrice.findMany({
       where: query,
       select: { service: true, country: true, priceBrl: true, priceUsd: true },

@@ -11,7 +11,33 @@ const VALID_SERVICES = [
   'fb', // Facebook
   'tw', // Twitter
   'lf', // TikTok
+  'ig', // Instagram
   'ot', // Other
+  'dh', // Ebay
+  'aa', // Probo
+  'ee', // Twilio
+  'hb', // Twitch
+  'ahb', // Ubisoft
+  'kf', // Weibo
+  'rc', // Skype
+  'am', // Amazon
+  'ds', // Discord
+  'an', // AliExpress
+  'bbl', // Autodesk
+  'ts', // PayPal
+  'nf', // Netflix
+  'mm', // Microsoft
+  'tn', // LinkedIn
+  'ew', // Nike
+  'mt', // Steam
+  'oi', // Tinder
+  'ya', // Uber
+  'uk', // Airbnb
+  'my', // Caixa
+  'ip', // Burger King
+  'bz', // Blizzard
+  'aon', // Binace
+  'zs', // Bilibili
   'baa', 'bax', 'baw', 'aa', 'ac', 'ad', 'ae', 'ah', 'ai', 'ak', 'am', 'bbm', 'an', 'bbl', 'ao', 'bbo', 'aq', 'ar', 'bbs', 'at', 'av', 'bbt', 'aw', 'ax', 'bbv', 'ba', 'bd', // Add more from getPrices
   // Add all service codes from getPrices logs
 ];
