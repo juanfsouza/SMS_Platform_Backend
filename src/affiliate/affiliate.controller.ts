@@ -22,7 +22,7 @@ export class AffiliateController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Post('commission')
   async setCommission(@Body(new ZodValidationPipe(SetAffiliateCommissionDto)) body: SetAffiliateCommissionDto) {
     await this.affiliateService.setCommissionPercentage(body.percentage);
@@ -30,7 +30,7 @@ export class AffiliateController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Get('commission')
   async getCommission() {
     const percentage = await this.affiliateService.getCommissionPercentage();
@@ -49,14 +49,14 @@ export class AffiliateController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Get('withdrawals')
   async getWithdrawals(@Query('status') status?: string) {
     return this.affiliateService.getWithdrawalRequests(status);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Patch('withdrawals/:id')
   async updateWithdrawal(@Param('id') id: string, @Body() body: { status: 'APPROVED' | 'CANCELLED' }) {
     await this.affiliateService.updateWithdrawalRequest(parseInt(id), body.status);

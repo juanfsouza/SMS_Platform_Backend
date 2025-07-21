@@ -54,6 +54,31 @@ export class UsersService {
     return { balance: user[0].balance };
   }
 
+  async addAffiliateBalance(id: number, amount: number): Promise<{ affiliateBalance: number }> {
+    if (amount <= 0) {
+      throw new BadRequestException('Amount must be positive');
+    }
+    const user = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { affiliateBalance: { increment: amount } },
+      }),
+      this.prisma.transaction.create({
+        data: {
+          userId: id,
+          amount,
+          type: 'AFFILIATE_CREDIT',
+          status: 'COMPLETED',
+          description: 'Manual affiliate balance addition',
+        },
+      }),
+    ]);
+    if (!user[0]) {
+      throw new NotFoundException('User not found');
+    }
+    return { affiliateBalance: user[0].affiliateBalance };
+  }
+
   async updateUserBalance(id: number, balance: number): Promise<{ balance: number }> {
     if (balance < 0) {
       throw new BadRequestException('Balance cannot be negative');

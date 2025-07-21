@@ -26,6 +26,7 @@ model User {
   withdrawalRequests WithdrawalRequest[]
   emailVerified     Boolean            @default(false)
   confirmationToken String?            @unique
+  resetToken        String?            @unique
 }
 
 model Transaction {
@@ -37,8 +38,11 @@ model Transaction {
   status         String
   description    String?
   smsActivationId Int?
+  metadata       String?
   smsActivation  SmsActivation? @relation(fields: [smsActivationId], references: [id])
   createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  externalId     String?       @unique
 }
 
 model SmsActivation {

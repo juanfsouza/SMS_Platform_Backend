@@ -8,10 +8,13 @@ export default () => ({
   smsActivate: {
     apiKey: process.env.SMS_ACTIVATE_API_KEY,
   },
-  pushinPay: {
+  pushinpay: {
     apiKey: process.env.PUSHINPAY_API_KEY,
   },
   jwt: {
     secret: process.env.JWT_SECRET,
+  },
+  app: {
+    baseUrl: process.env.APP_BASE_URL || 'http://localhost:3001',
   },
 });

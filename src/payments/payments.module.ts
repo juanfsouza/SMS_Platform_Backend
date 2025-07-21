@@ -1,14 +1,20 @@
 import { Module } from '@nestjs/common';
-import { PaymentsService } from './payments.service';
-import { PaymentsController } from './payments.controller';
 import { HttpModule } from '@nestjs/axios';
+import { PaymentsController } from './payments.controller';
+import { PaymentsService } from './payments.service';
 import { PrismaModule } from '../prisma/prisma.module';
-import { ConfigModule } from '@nestjs/config';
 import { AffiliateModule } from '../affiliate/affiliate.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
-  imports: [HttpModule, PrismaModule, ConfigModule, AffiliateModule], 
+  imports: [
+    HttpModule.register({ timeout: 30000 }),
+    PrismaModule,
+    AffiliateModule,
+    ConfigModule,
+  ],
   controllers: [PaymentsController],
   providers: [PaymentsService],
+  exports: [PaymentsService],
 })
 export class PaymentsModule {}

@@ -11,7 +11,7 @@ export class CreditsController {
   constructor(private readonly creditsService: CreditsService) {}
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Post('markup')
   async setMarkup(@Body(new ZodValidationPipe(SetMarkupDto)) body: SetMarkupDto) {
     await this.creditsService.setMarkupPercentage(body.percentage);
@@ -19,7 +19,7 @@ export class CreditsController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Post('update-markup')
   async updateMarkup(@Body(new ZodValidationPipe(UpdateMarkupDto)) body: UpdateMarkupDto) {
     await this.creditsService.updateMarkupPercentage(body.percentage);
@@ -27,7 +27,7 @@ export class CreditsController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Get('markup')
   async getMarkup() {
     const percentage = await this.creditsService.getMarkupPercentage();
@@ -61,7 +61,7 @@ export class CreditsController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Post('refresh-prices')
   async refreshServicePrices() {
     await this.creditsService.fetchAndCacheServicePrices();

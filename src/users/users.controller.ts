@@ -5,6 +5,14 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { UpdateUserDto, AddBalanceDto, UpdateBalanceDto } from './dtos/users.dto';
+import { z } from 'zod';
+
+const AddAffiliateBalanceDto = z.object({
+  userId: z.number().int().positive('User ID must be a positive integer'),
+  amount: z.number().positive('Amount must be positive'),
+});
+
+type AddAffiliateBalanceDto = z.infer<typeof AddAffiliateBalanceDto>;
 
 @Controller('users')
 export class UsersController {
@@ -31,21 +39,28 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Post('balance')
   async addUserBalance(@Body(new ZodValidationPipe(AddBalanceDto)) body: AddBalanceDto) {
     return this.usersService.addUserBalance(body.userId, body.amount);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
+  @Post('affiliate-balance')
+  async addAffiliateBalance(@Body(new ZodValidationPipe(AddAffiliateBalanceDto)) body: AddAffiliateBalanceDto) {
+    return this.usersService.addAffiliateBalance(body.userId, body.amount);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @Patch('balance')
   async updateUserBalance(@Body(new ZodValidationPipe(UpdateBalanceDto)) body: UpdateBalanceDto) {
     return this.usersService.updateUserBalance(body.userId, body.balance);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Delete('balance')
   async resetUserBalance(@Body() body: { userId: number }) {
     return this.usersService.resetUserBalance(body.userId);
@@ -62,7 +77,7 @@ export class UsersController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ADMIN')
+  @Roles('admin')
   @Get()
   async getAllUsers(@Req() req) {
     const userId = req.user?.id;

@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
@@ -54,7 +54,6 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    console.log('User from DB:', user); // Debug log
     if (!(await bcrypt.compare(password, user.password))) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -72,8 +71,45 @@ export class AuthService {
       where: { id: user.id },
       data: { emailVerified: true, confirmationToken: null },
     });
-    console.log('Updated user:', updatedUser); // Debug log
     return { message: 'E-mail confirmado com sucesso!' };
+  }
+
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new BadRequestException('Nenhum usuário encontrado com esse e-mail.');
+    }
+
+    const resetToken = this.jwtService.sign({ id: user.id }, { expiresIn: '1h' }); // Token válido por 1 hora
+    const resetLink = `http://localhost:3001/auth/reset-password?token=${resetToken}`;
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { resetToken },
+    });
+
+    await this.emailService.sendResetPasswordEmail(email, resetLink);
+    return { message: 'Um e-mail com instruções para redefinir sua senha foi enviado.' };
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    try {
+      const decoded = this.jwtService.verify(token);
+      const user = await this.prisma.user.findUnique({ where: { id: decoded.id } });
+      if (!user || user.resetToken !== token) {
+        throw new UnauthorizedException('Token inválido ou expirado');
+      }
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { password: hashedPassword, resetToken: null },
+      });
+
+      return { message: 'Senha redefinida com sucesso!' };
+    } catch (error) {
+      throw new UnauthorizedException('Token inválido ou expirado');
+    }
   }
 
   private generateResponse(user: any) {
