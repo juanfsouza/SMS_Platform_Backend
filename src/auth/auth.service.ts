@@ -3,18 +3,27 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { EmailService } from '../email/email.service';
+import { Redis } from 'ioredis';
+import { nanoid } from 'nanoid';
 
 @Injectable()
 export class AuthService {
+  private readonly redis: Redis;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
-  ) {}
+  ) {
+    this.redis = new Redis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
+    });
+  }
 
   async register(name: string, email: string, password: string, affiliateCode?: string) {
     try {
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = await bcrypt.hash(password, 12); // Increased cost factor
       let referredByLinkId: number | null = null;
 
       if (affiliateCode) {
@@ -24,7 +33,7 @@ export class AuthService {
         }
       }
 
-      const confirmationToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      const confirmationToken = nanoid(32);
       const user = await this.prisma.user.create({
         data: {
           name,
@@ -50,16 +59,24 @@ export class AuthService {
   }
 
   async login(email: string, password: string) {
+    const attemptsKey = `login_attempts:${email}`;
+    const attempts = parseInt(await this.redis.get(attemptsKey) || '0', 10);
+
+    if (attempts >= 5) {
+      throw new UnauthorizedException('Conta bloqueada. Tente novamente em 15 minutos.');
+    }
+
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) {
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      await this.redis.set(attemptsKey, attempts + 1, 'EX', 900); // 15 min lockout
       throw new UnauthorizedException('Invalid credentials');
     }
-    if (!(await bcrypt.compare(password, user.password))) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
+
     if (!user.emailVerified) {
       throw new UnauthorizedException('Por favor, confirme seu e-mail primeiro.');
     }
+
+    await this.redis.del(attemptsKey); // Reset attempts on success
     return this.generateResponse(user);
   }
 
@@ -80,12 +97,13 @@ export class AuthService {
       throw new BadRequestException('Nenhum usuário encontrado com esse e-mail.');
     }
 
-    const resetToken = this.jwtService.sign({ id: user.id }, { expiresIn: '1h' }); // Token válido por 1 hora
-    const resetLink = `http://localhost:3001/auth/reset-password?token=${resetToken}`;
+    const resetToken = this.jwtService.sign({ id: user.id }, { expiresIn: '1h' });
+    const hashedResetToken = await bcrypt.hash(resetToken, 12); // Hash the reset token
+    const resetLink = `https://your-frontend-domain.com/auth/reset-password?token=${resetToken}`;
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { resetToken },
+      data: { resetToken: hashedResetToken },
     });
 
     await this.emailService.sendResetPasswordEmail(email, resetLink);
@@ -96,11 +114,11 @@ export class AuthService {
     try {
       const decoded = this.jwtService.verify(token);
       const user = await this.prisma.user.findUnique({ where: { id: decoded.id } });
-      if (!user || user.resetToken !== token) {
+      if (!user || !user.resetToken || !(await bcrypt.compare(token, user.resetToken))) {
         throw new UnauthorizedException('Token inválido ou expirado');
       }
 
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      const hashedPassword = await bcrypt.hash(newPassword, 12); // Increased cost factor
       await this.prisma.user.update({
         where: { id: user.id },
         data: { password: hashedPassword, resetToken: null },

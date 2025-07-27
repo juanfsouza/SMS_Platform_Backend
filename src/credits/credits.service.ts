@@ -10,7 +10,7 @@ import { CountryMapService } from '../sms/country-map.service';
 export class CreditsService {
   private readonly logger = new Logger(CreditsService.name);
   private readonly smsActivateApiUrl = 'https://api.sms-activate.ae/stubs/handler_api.php';
-  private readonly FIXED_MARKUP = 1.5; // 50% markup from SMS-Activate API
+  private readonly FIXED_MARKUP = 1.5;
 
   constructor(
     private readonly httpService: HttpService,
@@ -98,8 +98,8 @@ export class CreditsService {
           const priceUsd = priceUsdBase * this.FIXED_MARKUP;
           const priceBrl = priceUsd * exchangeRate * (1 + adminMarkupPercentage / 100);
           priceRecords.push({
-            service: service, // Fixed: Use service code as service
-            country: countryId, // Fixed: Use countryId as country
+            service: service,
+            country: countryId,
             priceUsd: parseFloat(priceUsd.toFixed(2)),
             priceBrl: parseFloat(priceBrl.toFixed(2)),
           });

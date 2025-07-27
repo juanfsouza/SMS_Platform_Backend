@@ -1,27 +1,14 @@
 import { Controller, Post, Body, Get, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto } from './dtos/auth.dto';
+import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto } from './dtos/auth.dto';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
-import { z } from 'zod';
-
-const ForgotPasswordDto = z.object({
-  email: z.string().email('Invalid email address'),
-});
-
-const ResetPasswordDto = z.object({
-  token: z.string().min(1, 'Token is required'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-type ForgotPasswordDto = z.infer<typeof ForgotPasswordDto>;
-type ResetPasswordDto = z.infer<typeof ResetPasswordDto>;
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  async register(@Body(new ZodValidationPipe(RegisterDto)) body: RegisterDto & { affiliateCode?: string }) {
+  async register(@Body(new ZodValidationPipe(RegisterDto)) body: RegisterDto) {
     return this.authService.register(body.name, body.email, body.password, body.affiliateCode);
   }
 
