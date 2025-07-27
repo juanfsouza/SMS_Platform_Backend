@@ -12,7 +12,7 @@ export default () => ({
     apiKey: process.env.PUSHINPAY_API_KEY,
   },
   jwt: {
-    secret: process.env.JWT_SECRET,
+    secret: process.env.JWT_SECRET || 'your-fallback-secret-key-change-in-production',
   },
   app: {
     baseUrl: process.env.APP_BASE_URL || 'http://localhost:3001',
