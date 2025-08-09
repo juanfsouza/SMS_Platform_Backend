@@ -17,4 +17,8 @@ export default () => ({
   app: {
     baseUrl: process.env.APP_BASE_URL || 'http://localhost:3001',
   },
+  turnstile: {
+    secretKey: process.env.TURNSTILE_SECRET_KEY,
+    siteKey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+  },
 });
