@@ -167,6 +167,26 @@ export class CreditsService {
     return prices;
   }
 
+  async updateSingleServicePrice(service: string, country: string, priceBrl: number, priceUsd: number): Promise<void> {
+    const existingPrice = await this.prisma.servicePrice.findFirst({
+      where: { service, country },
+    });
+
+    if (!existingPrice) {
+      throw new BadRequestException(`Price not found for service ${service} and country ${country}`);
+    }
+
+    await this.prisma.servicePrice.updateMany({
+      where: { service, country },
+      data: { 
+        priceBrl: parseFloat(priceBrl.toFixed(2)), 
+        priceUsd: parseFloat(priceUsd.toFixed(2)) 
+      },
+    });
+
+    this.logger.log(`Updated single price for service=${service}, country=${country} to BRL=${priceBrl}, USD=${priceUsd}`);
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async handlePriceRefreshCron() {
     this.logger.log('Running daily price refresh cron job');
