@@ -1,22 +1,32 @@
-import { Controller, Post, Body, Get, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto } from './dtos/auth.dto';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+import { UseTurnstile } from 'src/common/decorators/turnstile.decorator';
+import { TurnstileGuard } from 'src/common/guards/turnstile.guard';
 
 @Controller('auth')
+@UseGuards(TurnstileGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @UseTurnstile() // Este decorator marca que a rota precisa de CAPTCHA
   async register(@Body(new ZodValidationPipe(RegisterDto)) body: RegisterDto) {
-    return this.authService.register(body.name, body.email, body.password, body.affiliateCode);
+    // O turnstileToken já foi validado pelo guard e removido do body
+    const { turnstileToken, ...userData } = body as any;
+    return this.authService.register(userData.name, userData.email, userData.password, userData.affiliateCode);
   }
 
   @Post('login')
+  @UseTurnstile() // Este decorator marca que a rota precisa de CAPTCHA
   async login(@Body(new ZodValidationPipe(LoginDto)) body: LoginDto) {
-    return this.authService.login(body.email, body.password);
+    // O turnstileToken já foi validado pelo guard e removido do body
+    const { turnstileToken, ...credentials } = body as any;
+    return this.authService.login(credentials.email, credentials.password);
   }
 
+  // Essas rotas NÃO usam @UseTurnstile(), então não precisam de CAPTCHA
   @Get('confirm-email')
   async confirmEmail(@Query('token') token: string) {
     return this.authService.confirmEmail(token);

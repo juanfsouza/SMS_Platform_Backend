@@ -7,10 +7,13 @@ import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EmailService } from 'src/email/email.service';
+import { TurnstileModule } from 'src/turnstile/turnstile.module';
+import { TurnstileGuard } from 'src/common/guards/turnstile.guard';
 
 @Module({
   imports: [
     PrismaModule,
+    TurnstileModule,
     JwtModule.registerAsync({
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get('jwt.secret'),
@@ -20,7 +23,7 @@ import { EmailService } from 'src/email/email.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, EmailService],
+  providers: [AuthService, JwtStrategy, JwtAuthGuard, EmailService, TurnstileGuard],
   exports: [JwtAuthGuard],
 })
 export class AuthModule {}

@@ -3,7 +3,7 @@ import { CreditsService } from './credits.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { SetMarkupDto, UpdateMarkupDto } from './dtos/credits.dto';
+import { SetMarkupDto, UpdateMarkupDto, UpdateSinglePriceDto } from './dtos/credits.dto';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 
 @Controller('credits')
@@ -66,5 +66,18 @@ export class CreditsController {
   async refreshServicePrices() {
     await this.creditsService.fetchAndCacheServicePrices();
     return { message: 'Service prices refreshed' };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Post('update-single-price')
+  async updateSinglePrice(@Body(new ZodValidationPipe(UpdateSinglePriceDto)) body: UpdateSinglePriceDto) {
+    await this.creditsService.updateSingleServicePrice(
+      body.service,
+      body.country,
+      body.priceBrl,
+      body.priceUsd
+    );
+    return { message: `Price updated for service ${body.service} in country ${body.country}` };
   }
 }
