@@ -1,4 +1,4 @@
-## SMS Platform Backend
+# SMS Platform Backend
 
 Backend para plataforma de ativação de SMS usando NestJS, Prisma e PostgreSQL.
 
