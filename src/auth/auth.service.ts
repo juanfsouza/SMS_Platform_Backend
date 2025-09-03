@@ -23,7 +23,8 @@ export class AuthService {
     });
   }
 
-  async register(name: string, email: string, password: string, affiliateCode?: string) {
+  // Atualizado para retornar dados do usuário e token após registro
+  async register(email: string, password: string, name?: string, affiliateCode?: string) {
     try {
       const hashedPassword = await bcrypt.hash(password, 12);
       let referredByLinkId: number | null = null;
@@ -36,27 +37,42 @@ export class AuthService {
       }
 
       const confirmationToken = nanoid(32);
+      
+      // Preparar dados do usuário
+      const userData: any = {
+        email,
+        password: hashedPassword,
+        balance: 0,
+        affiliateBalance: 0,
+        role: 'USER',
+        referredByLinkId,
+        confirmationToken,
+        emailVerified: false,
+      };
+
+      // Só adiciona o nome se foi fornecido
+      if (name && name.trim()) {
+        userData.name = name.trim();
+      }
+
       const user = await this.prisma.user.create({
-        data: {
-          name,
-          email,
-          password: hashedPassword,
-          balance: 0,
-          affiliateBalance: 0,
-          role: 'USER',
-          referredByLinkId,
-          confirmationToken,
-          emailVerified: false, // Ainda criamos como false, mas não verificamos na autenticação
-        },
+        data: userData,
       });
 
+      // Tentar enviar email de confirmação (sem bloquear o processo)
       try {
         await this.emailService.sendConfirmationEmail(email, confirmationToken);
-        return { message: 'Usuário registrado com sucesso! Um e-mail de confirmação foi enviado (opcional).' };
       } catch (emailError) {
         console.warn('Failed to send confirmation email:', emailError);
-        return { message: 'Usuário registrado com sucesso! (E-mail de confirmação não pôde ser enviado)' };
       }
+
+      // Retornar dados do usuário e token para login automático
+      return {
+        success: true,
+        message: 'Usuário registrado com sucesso! Um e-mail de confirmação foi enviado (opcional).',
+        user: this.generateResponse(user) // Retorna user e token
+      };
+      
     } catch (error) {
       if (error.code === 'P2002') {
         throw new ConflictException('Email already exists');
@@ -79,9 +95,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // REMOVIDO COMPLETAMENTE: Verificação de email não é mais necessária
-    // Email verification is now completely optional - users can login without confirming email
-    
     await this.redis.del(attemptsKey);
     return this.generateResponse(user);
   }
@@ -142,7 +155,6 @@ export class AuthService {
     }
   }
 
-  // Método adicional para reenviar email de confirmação (opcional)
   async resendConfirmationEmail(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
@@ -153,7 +165,6 @@ export class AuthService {
       throw new BadRequestException('E-mail já foi verificado.');
     }
 
-    // Se não há token, gera um novo
     let confirmationToken = user.confirmationToken;
     if (!confirmationToken) {
       confirmationToken = nanoid(32);
@@ -181,7 +192,7 @@ export class AuthService {
         email: user.email,
         balance: user.balance,
         affiliateBalance: user.affiliateBalance,
-        emailVerified: user.emailVerified, // Ainda retornamos o status para o frontend mostrar se quer verificar
+        emailVerified: user.emailVerified,
       },
       token: this.jwtService.sign(payload),
     };

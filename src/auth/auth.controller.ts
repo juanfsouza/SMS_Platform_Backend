@@ -14,7 +14,13 @@ export class AuthController {
   @UseTurnstile()
   async register(@Body(new ZodValidationPipe(RegisterDto)) body: RegisterDto) {
     const { turnstileToken, ...userData } = body as any;
-    return this.authService.register(userData.name, userData.email, userData.password, userData.affiliateCode);
+    // Chamada atualizada: email, password, name?, affiliateCode?
+    return this.authService.register(
+      userData.email, 
+      userData.password, 
+      userData.name, // Pode ser undefined
+      userData.affiliateCode
+    );
   }
 
   @Post('login')

@@ -5,7 +5,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 export interface PurchaseLog {
   id: number;
   userId: number;
-  userName: string;
+  userName: string | null;
   userEmail: string;
   service: string;
   country: string;
