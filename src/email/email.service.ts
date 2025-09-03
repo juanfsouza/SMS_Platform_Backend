@@ -1,4 +1,3 @@
-// email.service.ts
 import { Injectable } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { ConfigService } from '@nestjs/config';
@@ -24,7 +23,8 @@ export class EmailService {
   }
 
   async sendConfirmationEmail(email: string, token: string) {
-    const confirmationLink = `http://localhost:3001/auth/confirm-email?token=${token}`;
+    const frontendBaseUrl = this.configService.get('app.baseUrl');
+    const confirmationLink = `${frontendBaseUrl}/auth/confirm-email?token=${token}`;
     const mailOptions = {
       from: this.configService.get('EMAIL_USER'),
       to: email,

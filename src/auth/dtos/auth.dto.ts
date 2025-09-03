@@ -21,6 +21,11 @@ export const ResetPasswordDto = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+// Novo DTO para reenviar confirmação de email
+export const ResendConfirmationDto = z.object({
+  email: z.string().email('Invalid email address'),
+});
+
 // DTOs para requests com Turnstile (opcionais - o guard já valida)
 export const RegisterWithTurnstileDto = RegisterDto.extend({
   turnstileToken: z.string().min(1, 'Turnstile token is required'),
@@ -34,5 +39,6 @@ export type RegisterDto = z.infer<typeof RegisterDto>;
 export type LoginDto = z.infer<typeof LoginDto>;
 export type ForgotPasswordDto = z.infer<typeof ForgotPasswordDto>;
 export type ResetPasswordDto = z.infer<typeof ResetPasswordDto>;
+export type ResendConfirmationDto = z.infer<typeof ResendConfirmationDto>;
 export type RegisterWithTurnstileDto = z.infer<typeof RegisterWithTurnstileDto>;
 export type LoginWithTurnstileDto = z.infer<typeof LoginWithTurnstileDto>;
