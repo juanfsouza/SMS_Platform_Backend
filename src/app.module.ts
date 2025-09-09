@@ -3,8 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { BullModule } from '@nestjs/bull';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { SmsModule } from './sms/sms.module';
 import { PaymentsModule } from './payments/payments.module';
 import { AuthModule } from './auth/auth.module';
@@ -16,6 +14,10 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { EmailModule } from './email/email.module';
 import configuration from './config/configuration';
+import { TurnstileModule } from './turnstile/turnstile.module';
+import { AdminController } from './admin/admin.controller';
+import { AdminService } from './admin/admin.service';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -33,12 +35,13 @@ import configuration from './config/configuration';
     ThrottlerModule.forRoot({
       throttlers: [
         {
-          ttl: 60000, // 60 seconds
-          limit: 10, // Max 10 requests per IP
+          ttl: 60000,
+          limit: 10,
         },
       ],
     }),
     SmsModule,
+    TurnstileModule,
     PaymentsModule,
     AuthModule,
     UsersModule,
@@ -47,14 +50,15 @@ import configuration from './config/configuration';
     CommonModule,
     AffiliateModule,
     EmailModule,
+    AdminModule
   ],
-  controllers: [AppController],
   providers: [
-    AppService,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
+    AdminService,
   ],
+  controllers: [AdminController],
 })
 export class AppModule {}
