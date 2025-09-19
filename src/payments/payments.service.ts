@@ -3,6 +3,7 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { AffiliateService } from '../affiliate/affiliate.service';
+import { LogsService } from '../logs/logs.service';
 import { lastValueFrom } from 'rxjs';
 import { Prisma } from '@prisma/client';
 
@@ -17,6 +18,7 @@ export class PaymentsService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly affiliateService: AffiliateService,
+    private readonly logsService: LogsService,
   ) {}
 
   async createCheckoutLink(userId: number, amount: number, affiliateCode?: string): Promise<any> {
@@ -30,8 +32,8 @@ export class PaymentsService {
 
     try {
       const amountInCentavos = Math.round(amount * 100);
-      if (amountInCentavos < 50) {
-        throw new BadRequestException('Amount must be at least 50 centavos');
+      if (amountInCentavos < 1000) {
+        throw new BadRequestException('Amount must be at least 10 reais');
       }
 
       let affiliateLinkId: number | null = null;
@@ -105,6 +107,20 @@ export class PaymentsService {
         }
         throw new BadRequestException(`Failed to create transaction: ${prismaError.message}`);
       }
+
+      // Log do pagamento gerado
+      await this.logsService.logPayment(
+        userId,
+        'Gerou um pagamento',
+        `Gerou um pagamento - Valor: R$ ${amount.toFixed(2)} - Transaction ID: ${id}${affiliateCode ? ` - Código afiliado: ${affiliateCode}` : ''}`,
+        { 
+          amount, 
+          transactionId: id, 
+          affiliateCode, 
+          affiliateLinkId,
+          status 
+        }
+      );
 
       return {
         transactionId: id,
@@ -230,6 +246,19 @@ export class PaymentsService {
           this.logger.error(`Failed to process affiliate commission: ${error.message}`, error.stack);
         }
       }
+
+      // Log de pagamento confirmado
+      await this.logsService.logPaymentConfirmed(
+        userId,
+        'Pagamento Sucesso',
+        `Pagamento Sucesso ⭐ Email: ${transaction.user.email} - Valor: R$ ${amount.toFixed(2)} - Transaction ID: ${transactionId}`,
+        { 
+          amount, 
+          transactionId, 
+          newBalance: result.updatedUser.balance,
+          email: transaction.user.email 
+        }
+      );
 
       return {
         transactionId,

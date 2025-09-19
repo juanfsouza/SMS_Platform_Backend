@@ -6,6 +6,7 @@ import { EmailService } from '../email/email.service';
 import { Redis } from 'ioredis';
 import { nanoid } from 'nanoid';
 import { ConfigService } from '@nestjs/config';
+import { LogsService } from '../logs/logs.service';
 
 @Injectable()
 export class AuthService {
@@ -16,6 +17,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly logsService: LogsService,
   ) {
     this.redis = new Redis({
       host: process.env.REDIS_HOST || 'localhost',
@@ -24,7 +26,7 @@ export class AuthService {
   }
 
   // Atualizado para retornar dados do usuário e token após registro
-  async register(email: string, password: string, name?: string, affiliateCode?: string) {
+  async register(email: string, password: string, name?: string, affiliateCode?: string, ipAddress?: string, userAgent?: string) {
     try {
       const hashedPassword = await bcrypt.hash(password, 12);
       let referredByLinkId: number | null = null;
@@ -59,6 +61,16 @@ export class AuthService {
         data: userData,
       });
 
+      // Log do registro
+      await this.logsService.logLogin(
+        user.id,
+        'Criou uma conta na plataforma',
+        `Criou uma conta na plataforma - Email: ${email}${name ? ` - Nome: ${name}` : ''}${affiliateCode ? ` - Código afiliado: ${affiliateCode}` : ''}`,
+        { email, name, affiliateCode, referredByLinkId },
+        ipAddress,
+        userAgent
+      );
+
       // Tentar enviar email de confirmação (sem bloquear o processo)
       try {
         await this.emailService.sendConfirmationEmail(email, confirmationToken);
@@ -81,25 +93,54 @@ export class AuthService {
     }
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, ipAddress?: string, userAgent?: string) {
     const attemptsKey = `login_attempts:${email}`;
     const attempts = parseInt(await this.redis.get(attemptsKey) || '0', 10);
 
     if (attempts >= 5) {
+      // Log de tentativa de fraude
+      await this.logsService.logFraudAttempt(
+        ipAddress || 'unknown',
+        'Tentativa de login com conta bloqueada',
+        `Tentativa de login com conta bloqueada - Email: ${email} - IP: ${ipAddress}`,
+        { email, attempts, reason: 'account_blocked' },
+        userAgent
+      );
       throw new UnauthorizedException('Conta bloqueada. Tente novamente em 15 minutos.');
     }
 
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user || !(await bcrypt.compare(password, user.password))) {
       await this.redis.set(attemptsKey, attempts + 1, 'EX', 900);
+      
+      // Log de tentativa de login falhada
+      await this.logsService.logFraudAttempt(
+        ipAddress || 'unknown',
+        'Tentativa de login com credenciais inválidas',
+        `Tentativa de login com credenciais inválidas - Email: ${email} - IP: ${ipAddress}`,
+        { email, attempts: attempts + 1, reason: 'invalid_credentials' },
+        userAgent
+      );
+      
       throw new UnauthorizedException('Invalid credentials');
     }
 
     await this.redis.del(attemptsKey);
+    
+    // Log de login bem-sucedido
+    await this.logsService.logLogin(
+      user.id,
+      'Fez login na plataforma',
+      `Fez login na plataforma - Email: ${email}`,
+      { email, userId: user.id },
+      ipAddress,
+      userAgent
+    );
+    
     return this.generateResponse(user);
   }
 
-  async confirmEmail(token: string) {
+  async confirmEmail(token: string, ipAddress?: string, userAgent?: string) {
     const user = await this.prisma.user.findFirst({ where: { confirmationToken: token } });
     if (!user) throw new UnauthorizedException('Token inválido ou expirado');
 
@@ -107,6 +148,17 @@ export class AuthService {
       where: { id: user.id },
       data: { emailVerified: true, confirmationToken: null },
     });
+
+    // Log de confirmação de email
+    await this.logsService.logLogin(
+      user.id,
+      'Confirmou email',
+      `Confirmou email - Email: ${user.email}`,
+      { email: user.email, userId: user.id },
+      ipAddress,
+      userAgent
+    );
+
     return { message: 'E-mail confirmado com sucesso! Isso melhora a segurança da sua conta.' };
   }
 

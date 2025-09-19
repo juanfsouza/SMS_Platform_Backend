@@ -18,6 +18,8 @@ import { TurnstileModule } from './turnstile/turnstile.module';
 import { AdminController } from './admin/admin.controller';
 import { AdminService } from './admin/admin.service';
 import { AdminModule } from './admin/admin.module';
+import { LogsModule } from './logs/logs.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
@@ -50,7 +52,9 @@ import { AdminModule } from './admin/admin.module';
     CommonModule,
     AffiliateModule,
     EmailModule,
-    AdminModule
+    AdminModule,
+    LogsModule,
+    TelegramModule
   ],
   providers: [
     {

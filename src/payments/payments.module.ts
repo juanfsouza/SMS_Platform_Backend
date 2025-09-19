@@ -4,6 +4,7 @@ import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AffiliateModule } from '../affiliate/affiliate.module';
+import { LogsModule } from '../logs/logs.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -11,6 +12,7 @@ import { ConfigModule } from '@nestjs/config';
     HttpModule.register({ timeout: 30000 }),
     PrismaModule,
     AffiliateModule,
+    LogsModule,
     ConfigModule,
   ],
   controllers: [PaymentsController],

@@ -9,11 +9,13 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { EmailService } from 'src/email/email.service';
 import { TurnstileModule } from 'src/turnstile/turnstile.module';
 import { TurnstileGuard } from 'src/common/guards/turnstile.guard';
+import { LogsModule } from '../logs/logs.module';
 
 @Module({
   imports: [
     PrismaModule,
     TurnstileModule,
+    LogsModule,
     JwtModule.registerAsync({
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get('jwt.secret'),

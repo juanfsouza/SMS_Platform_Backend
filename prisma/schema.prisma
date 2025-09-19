@@ -27,6 +27,7 @@ model User {
   emailVerified     Boolean            @default(false)
   confirmationToken String?            @unique
   resetToken        String?            @unique
+  apiLogs           ApiLog[]
 }
 
 model Transaction {
@@ -102,4 +103,17 @@ model AffiliateCommission {
   percentage   Float
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model ApiLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?
+  user        User?    @relation(fields: [userId], references: [id])
+  category    String   // DOCUMENTATION, LOGIN, MY_APIS, PROFILE, PAYMENT_GENERATED, PAYMENT_CONFIRMED, ROUTES_CREATED, ACCOUNT_DELETED, GENERAL, FRAUD_ATTEMPT
+  action      String   // Ação específica realizada
+  description String   // Descrição detalhada da ação
+  metadata    String?  // Dados adicionais em JSON
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
 }

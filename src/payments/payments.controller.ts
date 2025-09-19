@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { ZodValidationPipe } from 'src/common/pipes/zod-validation.pipe';
 
 const CreateCheckoutDto = z.object({
-  amount: z.number().positive().min(0.50, 'Amount must be at least 0.50 BRL'),
+  amount: z.number().positive().min(10.00, 'Amount must be at least 10.00 BRL'),
   affiliateCode: z.string().optional(),
 });
 

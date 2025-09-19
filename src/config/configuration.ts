@@ -21,4 +21,9 @@ export default () => ({
     secretKey: process.env.TURNSTILE_SECRET_KEY,
     siteKey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
   },
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN,
+    adminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID,
+    webhookUrl: process.env.TELEGRAM_WEBHOOK_URL,
+  },
 });

@@ -18,7 +18,7 @@ export class AffiliateController {
       throw new UnauthorizedException('User not authenticated');
     }
     const code = await this.affiliateService.generateAffiliateLink(userId);
-    return { affiliateLink: `https://your-domain.com/register?aff=${code}` };
+    return { affiliateLink: `http://findexsms.com/register?aff=${code}` };
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
