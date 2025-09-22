@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { lastValueFrom } from 'rxjs';
@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreditsService } from '../credits/credits.service';
 import { CountryMapService, mapToSmsActivateCodes } from './dtos/buy-sms.dto';
 import { StatusDto } from './dtos/status.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class SmsService {
@@ -19,6 +20,7 @@ export class SmsService {
     private readonly prisma: PrismaService,
     private readonly creditsService: CreditsService,
     private readonly countryMapService: CountryMapService,
+    @Inject(forwardRef(() => NotificationsService)) private readonly notificationsService: NotificationsService,
   ) {}
 
   async getNumbersStatus(country: string, operator: string): Promise<any> {
@@ -107,6 +109,25 @@ export class SmsService {
         where: { id: activation[2].id },
         data: { smsActivationId: activation[1].id },
       });
+
+      // Notificar compra de SMS
+      try {
+        await this.notificationsService.notifySmsPurchase(
+          userId,
+          service,
+          country,
+          priceBrl,
+          {
+            activationId,
+            phoneNumber,
+            priceUsd,
+            mappedService,
+            mappedCountry
+          }
+        );
+      } catch (notificationError) {
+        this.logger.error('Failed to send SMS purchase notification:', notificationError);
+      }
 
       this.logger.warn(`Please verify SMS-Activate account balance for activationId: ${activationId}`);
       return {

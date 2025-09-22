@@ -20,6 +20,7 @@ import { AdminService } from './admin/admin.service';
 import { AdminModule } from './admin/admin.module';
 import { LogsModule } from './logs/logs.module';
 import { TelegramModule } from './telegram/telegram.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -54,7 +55,8 @@ import { TelegramModule } from './telegram/telegram.module';
     EmailModule,
     AdminModule,
     LogsModule,
-    TelegramModule
+    TelegramModule,
+    NotificationsModule
   ],
   providers: [
     {

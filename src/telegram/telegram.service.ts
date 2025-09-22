@@ -286,18 +286,63 @@ Olá! Eu sou o bot que mostra os logs da sua API SMS Platform.
       const categoryIcon = this.getCategoryIcon(log.category);
       const time = this.formatTime(log.createdAt);
       const userInfo = log.user ? `👤 ${log.user.name || log.user.email}` : '👤 Usuário não identificado';
+      
+      // Determinar prioridade baseada na categoria
+      const priority = this.getNotificationPriority(log.category);
+      const priorityIcon = this.getPriorityIcon(priority);
 
-      const message = `
-🚨 **Novo Log da API**
+      let message = `${priorityIcon} **${priority} - ${log.category}**\n\n`;
+      message += `${categoryIcon} **${log.action}**\n`;
+      message += `📝 ${log.description}\n`;
+      message += `${userInfo} • 🕒 ${time}\n`;
 
-${categoryIcon} **${log.action}**
-${log.description}
-${userInfo} • 🕒 ${time}
-      `;
+      // Adicionar informações adicionais se disponíveis
+      if (log.metadata) {
+        message += `\n📊 **Detalhes:**\n`;
+        if (log.metadata.amount) {
+          message += `💰 Valor: R$ ${log.metadata.amount}\n`;
+        }
+        if (log.metadata.service) {
+          message += `🔧 Serviço: ${log.metadata.service}\n`;
+        }
+        if (log.metadata.country) {
+          message += `🌍 País: ${log.metadata.country}\n`;
+        }
+        if (log.metadata.ipAddress) {
+          message += `🌐 IP: ${log.metadata.ipAddress}\n`;
+        }
+      }
 
       await this.bot.sendMessage(adminChatId, message, { parse_mode: 'Markdown' });
     } catch (error) {
       this.logger.error('Failed to send log notification:', error);
     }
+  }
+
+  private getNotificationPriority(category: string): string {
+    const priorities: Record<string, string> = {
+      'FRAUD_ATTEMPT': 'ALTA',
+      'ACCOUNT_DELETED': 'ALTA',
+      'ADMIN': 'ALTA',
+      'PAYMENT_CONFIRMED': 'MÉDIA',
+      'PAYMENT_GENERATED': 'MÉDIA',
+      'SMS_ACTIVATION': 'MÉDIA',
+      'RECHARGE': 'MÉDIA',
+      'LOGIN': 'BAIXA',
+      'PROFILE': 'BAIXA',
+      'GENERAL': 'BAIXA'
+    };
+    
+    return priorities[category] || 'BAIXA';
+  }
+
+  private getPriorityIcon(priority: string): string {
+    const icons: Record<string, string> = {
+      'ALTA': '🔴',
+      'MÉDIA': '🟡',
+      'BAIXA': '🟢'
+    };
+    
+    return icons[priority] || '🟢';
   }
 }

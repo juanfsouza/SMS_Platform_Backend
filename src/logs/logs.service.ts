@@ -340,11 +340,35 @@ export class LogsService {
     const importantCategories = [
       LogCategory.FRAUD_ATTEMPT,
       LogCategory.PAYMENT_CONFIRMED,
+      LogCategory.PAYMENT_GENERATED,
       LogCategory.ACCOUNT_DELETED,
-      LogCategory.ADMIN
+      LogCategory.ADMIN,
+      LogCategory.SMS_ACTIVATION,
+      LogCategory.RECHARGE,
+      LogCategory.LOGIN
     ];
 
-    if (importantCategories.includes(log.category as LogCategory)) {
+    // Ações específicas importantes para notificar
+    const importantActions = [
+      'User Registration',
+      'Password Reset',
+      'Email Verification',
+      'SMS Purchase',
+      'Balance Recharge',
+      'Account Suspended',
+      'Suspicious Activity',
+      'API Key Generated',
+      'API Key Revoked',
+      'Profile Updated',
+      'Payment Failed',
+      'Refund Processed'
+    ];
+
+    const shouldNotify = 
+      importantCategories.includes(log.category as LogCategory) ||
+      importantActions.some(action => log.action.includes(action));
+
+    if (shouldNotify) {
       try {
         await this.telegramService.sendLogNotification(log);
       } catch (error) {

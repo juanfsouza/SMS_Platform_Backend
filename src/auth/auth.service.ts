@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
@@ -7,6 +7,7 @@ import { Redis } from 'ioredis';
 import { nanoid } from 'nanoid';
 import { ConfigService } from '@nestjs/config';
 import { LogsService } from '../logs/logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AuthService {
@@ -18,6 +19,7 @@ export class AuthService {
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
     private readonly logsService: LogsService,
+    @Inject(forwardRef(() => NotificationsService)) private readonly notificationsService: NotificationsService,
   ) {
     this.redis = new Redis({
       host: process.env.REDIS_HOST || 'localhost',
@@ -70,6 +72,18 @@ export class AuthService {
         ipAddress,
         userAgent
       );
+
+      // Notificar registro de usuário
+      try {
+        await this.notificationsService.notifyUserRegistration(
+          user.id,
+          email,
+          ipAddress,
+          userAgent
+        );
+      } catch (notificationError) {
+        console.warn('Failed to send user registration notification:', notificationError);
+      }
 
       // Tentar enviar email de confirmação (sem bloquear o processo)
       try {
@@ -136,6 +150,17 @@ export class AuthService {
       ipAddress,
       userAgent
     );
+
+    // Notificar login do usuário
+    try {
+      await this.notificationsService.notifyUserLogin(
+        user.id,
+        ipAddress,
+        userAgent
+      );
+    } catch (notificationError) {
+      console.warn('Failed to send user login notification:', notificationError);
+    }
     
     return this.generateResponse(user);
   }

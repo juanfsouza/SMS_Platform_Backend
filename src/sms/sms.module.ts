@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { SmsController } from './sms.controller';
 import { SmsService } from './sms.service';
 import { HttpModule } from '@nestjs/axios';
@@ -8,9 +8,10 @@ import { CreditsModule } from '../credits/credits.module';
 import { CreditsService } from 'src/credits/credits.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CountryMapService } from './country-map.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [HttpModule, PrismaModule, ConfigModule, CreditsModule],
+  imports: [HttpModule, PrismaModule, ConfigModule, CreditsModule, forwardRef(() => NotificationsModule)],
   controllers: [SmsController],
   providers: [SmsService, PrismaService, CreditsService, CountryMapService],
 })

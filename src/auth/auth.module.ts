@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtModule } from '@nestjs/jwt';
@@ -10,12 +10,14 @@ import { EmailService } from 'src/email/email.service';
 import { TurnstileModule } from 'src/turnstile/turnstile.module';
 import { TurnstileGuard } from 'src/common/guards/turnstile.guard';
 import { LogsModule } from '../logs/logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     PrismaModule,
     TurnstileModule,
     LogsModule,
+    forwardRef(() => NotificationsModule),
     JwtModule.registerAsync({
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get('jwt.secret'),

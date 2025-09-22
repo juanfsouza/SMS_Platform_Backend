@@ -1,9 +1,10 @@
-import { Injectable, BadRequestException, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, UnauthorizedException, Inject, forwardRef } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { AffiliateService } from '../affiliate/affiliate.service';
 import { LogsService } from '../logs/logs.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { lastValueFrom } from 'rxjs';
 import { Prisma } from '@prisma/client';
 
@@ -19,6 +20,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly affiliateService: AffiliateService,
     private readonly logsService: LogsService,
+    @Inject(forwardRef(() => NotificationsService)) private readonly notificationsService: NotificationsService,
   ) {}
 
   async createCheckoutLink(userId: number, amount: number, affiliateCode?: string): Promise<any> {
@@ -259,6 +261,23 @@ export class PaymentsService {
           email: transaction.user.email 
         }
       );
+
+      // Notificar recarga de saldo
+      try {
+        await this.notificationsService.notifyBalanceRecharge(
+          userId,
+          amount,
+          'PIX',
+          {
+            transactionId,
+            newBalance: result.updatedUser.balance,
+            email: transaction.user.email,
+            affiliateCode: transaction.metadata ? JSON.parse(transaction.metadata).affiliateCode : null
+          }
+        );
+      } catch (notificationError) {
+        this.logger.error('Failed to send balance recharge notification:', notificationError);
+      }
 
       return {
         transactionId,
