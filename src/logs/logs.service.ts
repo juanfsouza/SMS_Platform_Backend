@@ -86,6 +86,12 @@ export class LogsService {
   };
 
   async createLog(createLogDto: CreateLogDto, userId?: number): Promise<LogResponseDto> {
+    console.log('🔍 LogsService.createLog called with:', {
+      category: createLogDto.category,
+      action: createLogDto.action,
+      userId: userId
+    });
+
     const log = await this.prisma.apiLog.create({
       data: {
         ...createLogDto,
@@ -101,6 +107,13 @@ export class LogsService {
           },
         },
       },
+    });
+
+    console.log('✅ Log created successfully:', {
+      id: log.id,
+      category: log.category,
+      action: log.action,
+      userId: log.userId
     });
 
     const formattedLog = {
@@ -334,9 +347,18 @@ export class LogsService {
   }
 
   private async sendTelegramNotificationIfImportant(log: LogResponseDto) {
-    if (!this.telegramService) return;
+    console.log('🔔 Checking if log is important for Telegram notification:', {
+      category: log.category,
+      action: log.action,
+      telegramServiceAvailable: !!this.telegramService
+    });
 
-    // Categorias importantes para notificar
+    if (!this.telegramService) {
+      console.log('❌ TelegramService not available for notification');
+      return;
+    }
+
+    // Categorias importantes para notificar - TODAS as categorias
     const importantCategories = [
       LogCategory.FRAUD_ATTEMPT,
       LogCategory.PAYMENT_CONFIRMED,
@@ -345,10 +367,14 @@ export class LogsService {
       LogCategory.ADMIN,
       LogCategory.SMS_ACTIVATION,
       LogCategory.RECHARGE,
-      LogCategory.LOGIN
+      LogCategory.LOGIN,
+      LogCategory.PROFILE,
+      LogCategory.MY_APIS,
+      LogCategory.AFFILIATE,
+      LogCategory.DOCUMENTATION
     ];
 
-    // Ações específicas importantes para notificar
+    // Ações específicas importantes para notificar - TODAS as ações
     const importantActions = [
       'User Registration',
       'Password Reset',
@@ -361,19 +387,67 @@ export class LogsService {
       'API Key Revoked',
       'Profile Updated',
       'Payment Failed',
-      'Refund Processed'
+      'Refund Processed',
+      'Login',
+      'Logout',
+      'User Created',
+      'User Updated',
+      'User Deleted',
+      'SMS Activation',
+      'SMS Purchase',
+      'Credit Purchase',
+      'Withdrawal Request',
+      'Withdrawal Approved',
+      'Withdrawal Rejected',
+      'Affiliate Commission',
+      'Markup Updated',
+      'Price Updated',
+      'Service Price Refreshed',
+      'Admin Action',
+      'System Error',
+      'Security Alert',
+      // Ações adicionais comuns
+      'Fez login',
+      'Registrou',
+      'Atualizou',
+      'Criou',
+      'Deletou',
+      'Comprou',
+      'Recarregou',
+      'Solicitou',
+      'Aprovou',
+      'Rejeitou',
+      'Configurou',
+      'Modificou',
+      'Acessou',
+      'Visualizou',
+      'Baixou',
+      'Enviou',
+      'Recebeu'
     ];
 
     const shouldNotify = 
       importantCategories.includes(log.category as LogCategory) ||
-      importantActions.some(action => log.action.includes(action));
+      importantActions.some(action => log.action.toLowerCase().includes(action.toLowerCase()));
+
+    console.log('🔍 Notification decision:', {
+      categoryMatch: importantCategories.includes(log.category as LogCategory),
+      actionMatch: importantActions.some(action => log.action.toLowerCase().includes(action.toLowerCase())),
+      shouldNotify: shouldNotify,
+      logCategory: log.category,
+      logAction: log.action
+    });
 
     if (shouldNotify) {
       try {
+        console.log(`📤 Sending Telegram notification for log: ${log.action} - ${log.category}`);
         await this.telegramService.sendLogNotification(log);
+        console.log('✅ Telegram notification sent successfully');
       } catch (error) {
-        console.error('Failed to send Telegram notification:', error);
+        console.error('❌ Failed to send Telegram notification:', error);
       }
+    } else {
+      console.log(`⏭️ Log not important enough for notification: ${log.action} - ${log.category}`);
     }
   }
 }

@@ -36,8 +36,17 @@ export class CreditsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('prices')
-  async getServicePrices() {
-    return this.creditsService.getAllServicePrices();
+  async getServicePrices(
+    @Query('limit') limit: string = '1000',
+    @Query('offset') offset: string = '0',
+    @Query('includeTotal') includeTotal: string = 'false'
+  ) {
+    const prices = await this.creditsService.getPaginatedServicePrices(
+      parseInt(limit),
+      parseInt(offset),
+      includeTotal === 'true'
+    );
+    return prices;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -45,18 +54,68 @@ export class CreditsController {
   async getFilteredServicePrices(
     @Query('service') service?: string,
     @Query('country') country?: string,
-    @Query('limit') limit: string = '1000',
+    @Query('limit') limit: string = '100',
     @Query('offset') offset: string = '0',
+    @Query('includeTotal') includeTotal: string = 'false'
   ) {
     const where = {};
-    if (service) where['service'] = service.split(',').map(id => id.trim()); // Array of country IDs
-    if (country) where['country'] = country.split(',').map(code => code.trim()); // Array of service codes
-    const prices = await this.creditsService.getFilteredServicePrices(
+    if (service) where['service'] = service.split(',').map(id => id.trim());
+    if (country) where['country'] = country.split(',').map(code => code.trim());
+    
+    const prices = await this.creditsService.getFilteredServicePricesWithTotal(
       where,
       parseInt(limit),
       parseInt(offset),
+      includeTotal === 'true'
     );
-    console.log('Filtered prices:', prices.map((p) => ({ service: p.service, country: p.country })));
+    
+    console.log('Filtered prices:', Array.isArray(prices) ? prices.map((p: any) => ({ service: p.service, serviceName: p.serviceName, country: p.country })) : prices.prices?.map((p: any) => ({ service: p.service, serviceName: p.serviceName, country: p.country })));
+    return prices;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('prices/filter-by-name')
+  async getFilteredServicePricesByName(
+    @Query('serviceName') serviceName: string,
+    @Query('limit') limit: string = '100',
+    @Query('offset') offset: string = '0',
+    @Query('includeTotal') includeTotal: string = 'false'
+  ) {
+    if (!serviceName || serviceName.trim().length === 0) {
+      return { prices: [], total: 0 };
+    }
+    
+    const prices = await this.creditsService.getFilteredServicePricesByName(
+      serviceName.trim(),
+      parseInt(limit),
+      parseInt(offset),
+      includeTotal === 'true'
+    );
+    
+    console.log('Filtered prices by name:', Array.isArray(prices) ? prices.map((p: any) => ({ service: p.service, serviceName: p.serviceName, country: p.country })) : prices.prices?.map((p: any) => ({ service: p.service, serviceName: p.serviceName, country: p.country })));
+    return prices;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('prices/filter-by-country-name')
+  async getFilteredServicePricesByCountryName(
+    @Query('countryName') countryName: string,
+    @Query('limit') limit: string = '100',
+    @Query('offset') offset: string = '0',
+    @Query('includeTotal') includeTotal: string = 'false'
+  ) {
+    if (!countryName || countryName.trim().length === 0) {
+      return { prices: [], total: 0 };
+    }
+    
+    const prices = await this.creditsService.getFilteredServicePricesByCountryName(
+      countryName.trim(),
+      parseInt(limit),
+      parseInt(offset),
+      includeTotal === 'true'
+    );
+    
+    console.log('Filtered prices by country name:', Array.isArray(prices) ? prices.map((p: any) => ({ service: p.service, serviceName: p.serviceName, country: p.country })) : prices.prices?.map((p: any) => ({ service: p.service, serviceName: p.serviceName, country: p.country })));
     return prices;
   }
 

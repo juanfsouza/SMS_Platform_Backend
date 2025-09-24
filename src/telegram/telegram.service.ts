@@ -22,14 +22,73 @@ export class TelegramService {
       
       if (!token) {
         this.logger.warn('Telegram bot token not configured');
+        console.log('TELEGRAM_BOT_TOKEN not found in environment variables');
         return;
       }
 
       this.bot = new TelegramBot(token, { polling: true });
       this.setupCommands();
       this.logger.log('Telegram bot initialized successfully');
+      console.log('Telegram bot initialized successfully');
+      
+      // Teste de envio de mensagem inicial
+      this.sendTestMessage();
     } catch (error) {
       this.logger.error('Failed to initialize Telegram bot:', error);
+      console.error('Failed to initialize Telegram bot:', error);
+    }
+  }
+
+  private async sendTestMessage() {
+    try {
+      const adminChatId = this.configService.get('telegram.adminChatId');
+      if (adminChatId && this.bot) {
+        // Validar se o chat ID não é de um bot
+        if (this.isBotChatId(adminChatId)) {
+          console.error('❌ ERRO: TELEGRAM_ADMIN_CHAT_ID está configurado com ID de bot. Use seu ID de usuário pessoal.');
+          console.log('📋 Para obter seu ID de usuário:');
+          console.log('1. Abra o Telegram e procure por @userinfobot');
+          console.log('2. Envie /start');
+          console.log('3. Copie o ID fornecido');
+          console.log('4. Atualize a variável TELEGRAM_ADMIN_CHAT_ID no .env');
+          return;
+        }
+        
+        await this.bot.sendMessage(adminChatId, '🤖 Bot de notificações iniciado com sucesso!', { parse_mode: 'Markdown' });
+        console.log('✅ Test message sent successfully');
+      }
+    } catch (error) {
+      console.error('Failed to send test message:', error);
+      if (error.message?.includes("bots can't send messages to bots")) {
+        console.error('❌ ERRO: TELEGRAM_ADMIN_CHAT_ID está configurado com ID de bot.');
+        console.log('📋 Configure com seu ID de usuário pessoal (veja instruções acima)');
+      }
+    }
+  }
+
+  private isBotChatId(chatId: string): boolean {
+    // IDs de bot geralmente começam com o mesmo número do token
+    // ou têm padrões específicos. Vamos verificar se é um ID de bot.
+    const botToken = this.configService.get('telegram.botToken');
+    if (botToken) {
+      const botId = botToken.split(':')[0];
+      return chatId === botId || chatId.startsWith(botId);
+    }
+    return false;
+  }
+
+  async getMyChatId(): Promise<string | null> {
+    try {
+      const adminChatId = this.configService.get('telegram.adminChatId');
+      if (adminChatId && this.bot) {
+        // Tentar enviar uma mensagem de teste para verificar se o chat existe
+        await this.bot.sendMessage(adminChatId, '🔍 Teste de chat ID - se você recebeu esta mensagem, o chat ID está correto!');
+        return adminChatId;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error testing chat ID:', error);
+      return null;
     }
   }
 
@@ -66,6 +125,31 @@ Olá! Eu sou o bot que mostra os logs da sua API SMS Platform.
     this.bot.onText(/\/help/, (msg: any) => {
       const chatId = msg.chat.id;
       this.bot.sendMessage(chatId, this.getHelpMessage(), { parse_mode: 'Markdown' });
+    });
+
+    // Comando /myid - Mostrar o ID do chat
+    this.bot.onText(/\/myid/, (msg: any) => {
+      const chatId = msg.chat.id;
+      const userId = msg.from.id;
+      const username = msg.from.username || 'N/A';
+      const firstName = msg.from.first_name || 'N/A';
+      
+      const message = `
+🆔 **Seu ID de Chat:**
+\`${chatId}\`
+
+👤 **Seu ID de Usuário:** \`${userId}\`
+📝 **Nome:** ${firstName}
+🔗 **Username:** @${username}
+
+💡 **Para configurar no sistema:**
+Adicione esta linha no seu arquivo \`.env\`:
+\`\`\`
+TELEGRAM_ADMIN_CHAT_ID=${chatId}
+\`\`\`
+      `;
+      
+      this.bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
     });
 
     // Comando /logs - logs recentes
@@ -277,11 +361,27 @@ Olá! Eu sou o bot que mostra os logs da sua API SMS Platform.
 
   // Método para enviar notificações automáticas
   async sendLogNotification(log: any): Promise<void> {
-    if (!this.bot) return;
+    console.log('sendLogNotification called with log:', log);
+    
+    if (!this.bot) {
+      console.log('Bot not initialized, cannot send notification');
+      return;
+    }
 
     try {
       const adminChatId = this.configService.get('telegram.adminChatId');
-      if (!adminChatId) return;
+      console.log('Admin chat ID:', adminChatId);
+      
+      if (!adminChatId) {
+        console.log('Admin chat ID not configured');
+        return;
+      }
+
+      // Validar se o chat ID não é de um bot
+      if (this.isBotChatId(adminChatId)) {
+        console.error('❌ ERRO: TELEGRAM_ADMIN_CHAT_ID está configurado com ID de bot. Use seu ID de usuário pessoal.');
+        return;
+      }
 
       const categoryIcon = this.getCategoryIcon(log.category);
       const time = this.formatTime(log.createdAt);
@@ -313,8 +413,11 @@ Olá! Eu sou o bot que mostra os logs da sua API SMS Platform.
         }
       }
 
+      console.log('Sending message to Telegram:', message);
       await this.bot.sendMessage(adminChatId, message, { parse_mode: 'Markdown' });
+      console.log('Message sent successfully to Telegram');
     } catch (error) {
+      console.error('Failed to send log notification:', error);
       this.logger.error('Failed to send log notification:', error);
     }
   }
