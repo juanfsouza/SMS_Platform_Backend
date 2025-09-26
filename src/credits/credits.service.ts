@@ -988,7 +988,7 @@ export class CreditsService {
     includeTotal: boolean = false
   ): Promise<Array<{ service: string; serviceName: string; country: string; priceBrl: number; priceUsd: number }> | { prices: Array<{ service: string; serviceName: string; country: string; priceBrl: number; priceUsd: number }>; total: number }> {
     // Limitar o limite máximo para evitar sobrecarga
-    const safeLimit = Math.min(limit, 100);
+    const safeLimit = Math.min(limit, 10000);
     const safeOffset = Math.max(offset, 0);
 
     const queryPromise = this.prisma.servicePrice.findMany({
@@ -1032,7 +1032,7 @@ export class CreditsService {
     if (where.country?.length) query.country = { in: where.country };
     
     // Limitar o limite máximo para evitar sobrecarga
-    const safeLimit = Math.min(limit, 100);
+    const safeLimit = Math.min(limit, 10000);
     const safeOffset = Math.max(offset, 0);
     
     const prices = await this.prisma.servicePrice.findMany({
@@ -1060,7 +1060,7 @@ export class CreditsService {
     if (where.country?.length) query.country = { in: where.country };
     
     // Limitar o limite máximo para evitar sobrecarga
-    const safeLimit = Math.min(limit, 100);
+    const safeLimit = Math.min(limit, 10000);
     const safeOffset = Math.max(offset, 0);
 
     const queryPromise = this.prisma.servicePrice.findMany({
@@ -1114,7 +1114,7 @@ export class CreditsService {
     }
 
     const query = { service: { in: matchingServices } };
-    const safeLimit = Math.min(limit, 100);
+    const safeLimit = Math.min(limit, 10000);
     const safeOffset = Math.max(offset, 0);
 
     const queryPromise = this.prisma.servicePrice.findMany({
@@ -1200,7 +1200,7 @@ export class CreditsService {
     }
 
     const query = { country: { in: matchingCountries } };
-    const safeLimit = Math.min(limit, 100);
+    const safeLimit = Math.min(limit, 10000);
     const safeOffset = Math.max(offset, 0);
 
     const queryPromise = this.prisma.servicePrice.findMany({
@@ -1260,5 +1260,69 @@ export class CreditsService {
     this.logger.log('Running daily price refresh cron job');
     await this.fetchAndCacheServicePrices();
     this.logger.log('Daily price refresh completed');
+  }
+
+  async getAllAvailableServices(): Promise<string[]> {
+    try {
+      const services = await this.prisma.servicePrice.findMany({
+        select: { service: true },
+        distinct: ['service'],
+        orderBy: { service: 'asc' }
+      });
+      
+      const serviceList = services.map(s => s.service);
+      this.logger.log(`Found ${serviceList.length} available services in database`);
+      return serviceList;
+    } catch (error) {
+      this.logger.error(`Error getting all services: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getServiceCountriesCount(): Promise<{ [service: string]: number }> {
+    try {
+      const counts = await this.prisma.servicePrice.groupBy({
+        by: ['service'],
+        _count: {
+          country: true
+        }
+      });
+      
+      const result: { [service: string]: number } = {};
+      counts.forEach(item => {
+        result[item.service] = item._count.country;
+      });
+      
+      this.logger.log(`Found countries count for ${Object.keys(result).length} services`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Error getting service countries count: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async getServicePrices(service: string, limit: number = 1000): Promise<any[]> {
+    try {
+      const safeLimit = Math.min(limit, 10000);
+      const prices = await this.prisma.servicePrice.findMany({
+        where: { service },
+        take: safeLimit,
+        orderBy: { priceBrl: 'asc' }
+      });
+      
+      const result = prices.map(price => ({
+        service: price.service,
+        country: price.country,
+        priceBrl: price.priceBrl,
+        priceUsd: price.priceUsd,
+        serviceName: this.SERVICE_NAME_MAP[price.service] || price.service.toUpperCase()
+      }));
+      
+      this.logger.log(`Found ${result.length} prices for service ${service}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Error getting service prices for ${service}: ${error.message}`);
+      throw error;
+    }
   }
 }

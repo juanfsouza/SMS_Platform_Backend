@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, UseGuards, BadRequestException, Param } from '@nestjs/common';
 import { CreditsService } from './credits.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -54,7 +54,7 @@ export class CreditsController {
   async getFilteredServicePrices(
     @Query('service') service?: string,
     @Query('country') country?: string,
-    @Query('limit') limit: string = '100',
+    @Query('limit') limit: string = '10000',
     @Query('offset') offset: string = '0',
     @Query('includeTotal') includeTotal: string = 'false'
   ) {
@@ -138,5 +138,44 @@ export class CreditsController {
       body.priceUsd
     );
     return { message: `Price updated for service ${body.service} in country ${body.country}` };
+  }
+
+  @Get('all-services')
+  @UseGuards(JwtAuthGuard)
+  async getAllServices(): Promise<{ services: string[] }> {
+    try {
+      const services = await this.creditsService.getAllAvailableServices();
+      return { services };
+    } catch (error) {
+      console.error('Error getting all services:', error);
+      throw new BadRequestException('Erro ao obter serviços');
+    }
+  }
+
+  @Get('service-countries-count')
+  @UseGuards(JwtAuthGuard)
+  async getServiceCountriesCount(): Promise<{ [service: string]: number }> {
+    try {
+      const counts = await this.creditsService.getServiceCountriesCount();
+      return counts;
+    } catch (error) {
+      console.error('Error getting service countries count:', error);
+      throw new BadRequestException('Erro ao obter contagem de países');
+    }
+  }
+
+  @Get('service-prices/:service')
+  @UseGuards(JwtAuthGuard)
+  async getServicePricesByService(
+    @Param('service') service: string,
+    @Query('limit') limit: string = '1000'
+  ) {
+    try {
+      const prices = await this.creditsService.getServicePrices(service, parseInt(limit));
+      return prices;
+    } catch (error) {
+      console.error('Error getting service prices:', error);
+      throw new BadRequestException('Erro ao obter preços do serviço');
+    }
   }
 }
