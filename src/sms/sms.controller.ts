@@ -118,6 +118,34 @@ export class SmsController {
       };
 
       if (status === '8') {
+        // Verificar se já foi estornado anteriormente
+        const existingRefund = await this.prismaService.transaction.findFirst({
+          where: {
+            smsActivationId: activation.id,
+            type: 'REFUNDED',
+            status: 'COMPLETED',
+          },
+        });
+
+        if (existingRefund) {
+          this.logger.log(`Activation ${activationId} already refunded, skipping refund`);
+          await this.prismaService.smsActivation.update({
+            where: { activationId },
+            data: updateData,
+          });
+          return { status: 'received' };
+        }
+
+        // Verificar se o usuário já recebeu o código (não deve reembolsar)
+        if (activation.status === 'COMPLETED' && activation.code) {
+          this.logger.log(`Activation ${activationId} already completed with code, NOT refunding`);
+          await this.prismaService.smsActivation.update({
+            where: { activationId },
+            data: updateData,
+          });
+          return { status: 'received' };
+        }
+
         const debitTransaction = activation.transactions.find(
           (t) => t.type === 'DEBIT' && t.status === 'COMPLETED' && t.smsActivationId === activation.id,
         );
@@ -133,7 +161,7 @@ export class SmsController {
                 amount: debitTransaction.amount,
                 type: 'REFUNDED',
                 status: 'COMPLETED',
-                description: `Refund for SMS activation: ${activation.service} (${activation.country})`,
+                description: `Refund for SMS activation: ${activation.service} (${activation.country}) - Service failed before code delivery`,
                 smsActivationId: activation.id,
               },
             }),
@@ -146,7 +174,7 @@ export class SmsController {
               data: updateData,
             }),
           ]);
-          this.logger.log(`Refunded ${debitTransaction.amount} credits for activation ${activationId}`);
+          this.logger.log(`Refunded ${debitTransaction.amount} credits for activation ${activationId} - service failed before code delivery`);
         } else {
           await this.prismaService.smsActivation.update({
             where: { activationId },
