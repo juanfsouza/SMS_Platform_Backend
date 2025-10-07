@@ -100,6 +100,12 @@ export class SmsController {
     return this.smsService.getRecentActivations(userId);
   }
 
+  @Get('balance')
+  @UseGuards(JwtAuthGuard)
+  async getSmsActivateBalance() {
+    return this.smsService.getSmsActivateBalance();
+  }
+
   @Post('webhook')
   async handleWebhook(@Body(new ZodValidationPipe(WebhookDto)) body: WebhookDto) {
     const { activationId, status, code } = body;

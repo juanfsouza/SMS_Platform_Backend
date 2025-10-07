@@ -75,7 +75,29 @@ export class SmsService {
       const [status, activationId, phoneNumber] = response.data.split(':');
       if (status !== 'ACCESS_NUMBER') {
         this.logger.error(`Invalid SMS-Activate status: ${status}, response: ${response.data}`);
-        throw new BadRequestException(`Failed to get number: Invalid status "${status}" from SMS-Activate`);
+        
+        // Tratamento específico para diferentes status de erro
+        if (status === 'NO_BALANCE') {
+          throw new BadRequestException('SMS-Activate account has insufficient balance. Please contact support to add funds to the SMS-Activate account.');
+        } else if (status === 'NO_NUMBERS') {
+          throw new BadRequestException('No phone numbers available for this service and country at the moment. Please try again later.');
+        } else if (status === 'WRONG_SERVICE') {
+          throw new BadRequestException('Invalid service selected. Please choose a different service.');
+        } else if (status === 'WRONG_COUNTRY') {
+          throw new BadRequestException('Invalid country selected. Please choose a different country.');
+        } else if (status === 'BAD_ACTION') {
+          throw new BadRequestException('Invalid action. Please contact support.');
+        } else if (status === 'BAD_SERVICE') {
+          throw new BadRequestException('Service not available. Please choose a different service.');
+        } else if (status === 'BAD_KEY') {
+          throw new BadRequestException('SMS-Activate API key is invalid. Please contact support.');
+        } else if (status === 'ERROR_SQL') {
+          throw new BadRequestException('Database error on SMS-Activate. Please try again later.');
+        } else if (status === 'BANNED') {
+          throw new BadRequestException('Account is banned. Please contact support.');
+        } else {
+          throw new BadRequestException(`Failed to get number: Invalid status "${status}" from SMS-Activate`);
+        }
       }
 
       const activation = await this.prisma.$transaction([
@@ -154,6 +176,31 @@ export class SmsService {
     } catch (error) {
       this.logger.error(`Failed to get activation status for activationId=${activationId}: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to get activation status: ${error.message}`);
+    }
+  }
+
+  async getSmsActivateBalance(): Promise<any> {
+    const apiKey = this.configService.get('smsActivate.apiKey');
+    try {
+      const response = await lastValueFrom(
+        this.httpService.get(`${this.apiUrl}?api_key=${apiKey}&action=getBalance`),
+      );
+      this.logger.log(`SMS-Activate balance response: ${response.data}`);
+      
+      // A resposta do SMS-Activate para getBalance é: ACCESS_BALANCE:valor
+      const [status, balance] = response.data.split(':');
+      if (status !== 'ACCESS_BALANCE') {
+        throw new BadRequestException(`Failed to get balance: ${response.data}`);
+      }
+      
+      return {
+        balance: parseFloat(balance),
+        currency: 'USD',
+        status: 'success'
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get SMS-Activate balance: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to get SMS-Activate balance: ${error.message}`);
     }
   }
 
