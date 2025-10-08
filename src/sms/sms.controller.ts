@@ -109,6 +109,8 @@ export class SmsController {
   @Post('webhook')
   async handleWebhook(@Body(new ZodValidationPipe(WebhookDto)) body: WebhookDto) {
     const { activationId, status, code } = body;
+    this.logger.log(`Webhook received: activationId=${activationId}, status=${status}, code=${code}`);
+    
     try {
       const activation = await this.prismaService.smsActivation.findUnique({
         where: { activationId },
@@ -118,8 +120,20 @@ export class SmsController {
         throw new NotFoundException(`No SmsActivation record found for activationId: ${activationId}`);
       }
 
+      this.logger.log(`Current activation status: ${activation.status}, has code: ${!!activation.code}`);
+
+      // Definir status baseado no webhook
+      let newStatus: string;
+      if (status === '6') {
+        newStatus = 'COMPLETED';
+      } else if (status === '8') {
+        newStatus = 'CANCELLED';
+      } else {
+        newStatus = 'PENDING';
+      }
+
       const updateData: any = {
-        status: status === '6' ? 'COMPLETED' : status === '8' ? 'CANCELLED' : 'PENDING',
+        status: newStatus,
         code: code || null,
       };
 
@@ -145,10 +159,7 @@ export class SmsController {
         // Verificar se o usuário já recebeu o código (não deve reembolsar)
         if (activation.status === 'COMPLETED' && activation.code) {
           this.logger.log(`Activation ${activationId} already completed with code, NOT refunding`);
-          await this.prismaService.smsActivation.update({
-            where: { activationId },
-            data: updateData,
-          });
+          // NÃO atualizar status se já foi completado com código
           return { status: 'received' };
         }
 
@@ -192,8 +203,10 @@ export class SmsController {
           where: { activationId },
           data: updateData,
         });
+        this.logger.log(`Updated activation ${activationId} to status: ${newStatus}, code: ${code || 'none'}`);
       }
 
+      this.logger.log(`Webhook processed successfully for activationId: ${activationId}`);
       return { status: 'received' };
     } catch (error) {
       if (error instanceof NotFoundException) {
