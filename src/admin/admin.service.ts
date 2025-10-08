@@ -533,9 +533,9 @@ export class AdminService {
   }
 
   /**
-   * Cron job para processar estornos automáticos a cada hora
+   * Cron job para processar estornos automáticos a cada 5 minutos
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron('*/5 * * * *') // A cada 5 minutos
   async handleAutomaticRefundsCron() {
     this.logger.log('Running scheduled automatic refunds cron job');
     try {

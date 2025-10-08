@@ -107,9 +107,20 @@ export class SmsController {
   }
 
   @Post('webhook')
-  async handleWebhook(@Body(new ZodValidationPipe(WebhookDto)) body: WebhookDto) {
+  async handleWebhook(
+    @Body(new ZodValidationPipe(WebhookDto)) body: WebhookDto,
+    @Req() req: any
+  ) {
     const { activationId, status, code } = body;
-    this.logger.log(`Webhook received: activationId=${activationId}, status=${status}, code=${code}`);
+    
+    // Log seguro (sem dados sensíveis)
+    this.logger.log(`Webhook received: activationId=${activationId}, status=${status}, hasCode=${!!code}`);
+    
+    // Validação básica de segurança
+    if (!activationId || activationId.length < 3) {
+      this.logger.warn(`Invalid webhook activationId: ${activationId}`);
+      throw new BadRequestException('Invalid activation ID');
+    }
     
     try {
       const activation = await this.prismaService.smsActivation.findUnique({
@@ -122,9 +133,17 @@ export class SmsController {
 
       this.logger.log(`Current activation status: ${activation.status}, has code: ${!!activation.code}`);
 
+      // Validação de status válidos
+      const validStatuses = ['1', '2', '3', '4', '5', '6', '8'];
+      if (!validStatuses.includes(status)) {
+        this.logger.warn(`Invalid webhook status: ${status} for activationId: ${activationId}`);
+        throw new BadRequestException(`Invalid status: ${status}`);
+      }
+
       // Definir status baseado no webhook
       let newStatus: string;
-      if (status === '6') {
+      if (status === '6' || status === '2') {
+        // Status 6 = STATUS_OK (formato antigo), Status 2 = sucesso (formato novo)
         newStatus = 'COMPLETED';
       } else if (status === '8') {
         newStatus = 'CANCELLED';
@@ -136,6 +155,8 @@ export class SmsController {
         status: newStatus,
         code: code || null,
       };
+
+      this.logger.log(`Processing webhook: activationId=${activationId}, status=${status}, newStatus=${newStatus}, code=${code || 'none'}`);
 
       if (status === '8') {
         // Verificar se já foi estornado anteriormente
@@ -163,10 +184,17 @@ export class SmsController {
           return { status: 'received' };
         }
 
+        // Verificar se já está cancelado (evitar processamento duplicado)
+        if (activation.status === 'CANCELLED') {
+          this.logger.log(`Activation ${activationId} already cancelled, skipping`);
+          return { status: 'received' };
+        }
+
         const debitTransaction = activation.transactions.find(
           (t) => t.type === 'DEBIT' && t.status === 'COMPLETED' && t.smsActivationId === activation.id,
         );
         if (debitTransaction && debitTransaction.amount > 0) {
+          // Transação atômica para garantir consistência
           await this.prismaService.$transaction([
             this.prismaService.user.update({
               where: { id: activation.userId },
@@ -209,10 +237,14 @@ export class SmsController {
       this.logger.log(`Webhook processed successfully for activationId: ${activationId}`);
       return { status: 'received' };
     } catch (error) {
+      this.logger.error(`Webhook processing failed for activationId: ${activationId}, error: ${error.message}`, error.stack);
+      
       if (error instanceof NotFoundException) {
         throw error;
       }
-      throw new BadRequestException('Failed to process webhook: ' + error.message);
+      
+      // Não expor detalhes internos do erro
+      throw new BadRequestException('Failed to process webhook');
     }
   }
 }
