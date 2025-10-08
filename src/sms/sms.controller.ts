@@ -26,17 +26,29 @@ export class SmsController {
   @Post('buy')
   async buyNumber(@Body(new ZodValidationPipe(BuySmsDto)) body: BuySmsDto, @Req() req) {
     const userId = req.user.id;
-    return this.smsService.getNumber(body.service, body.country, userId);
+    // Usar ActiveSMS em vez do SMS-Activate
+    return this.smsService.buyActiveSmsNumber(body.service, body.country, userId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('status/:activationId')
   async getStatus(@Param('activationId') activationId: string, @Req() req): Promise<any> {
     const userId = req.user.id;
-    const status = await this.smsService.getActivationStatus(activationId);
-
-    // Parsear o status usando StatusDto
-    const parsedStatus = StatusDto.parse(status);
+    
+    // Usar ActiveSMS em vez do SMS-Activate
+    const apiStatus = await this.smsService.getActiveSmsStatus(activationId);
+    
+    // Parsear resposta do ActiveSMS
+    let parsedStatus: any;
+    if (apiStatus.status === 'success' && apiStatus.array && apiStatus.array.length > 0) {
+      const activationData = apiStatus.array[0];
+      parsedStatus = {
+        status: activationData.status === '2' ? 'success' : activationData.status === '1' ? 'pending' : 'cancelled',
+        code: activationData.code || null,
+      };
+    } else {
+      parsedStatus = { status: 'pending', code: null };
+    }
 
     // Buscar informações adicionais do banco de dados
     const activation = await this.prismaService.smsActivation.findUnique({
@@ -140,10 +152,10 @@ export class SmsController {
         throw new BadRequestException(`Invalid status: ${status}`);
       }
 
-      // Definir status baseado no webhook
+      // Definir status baseado no webhook (ActiveSMS usa status '2' para sucesso)
       let newStatus: string;
-      if (status === '6' || status === '2') {
-        // Status 6 = STATUS_OK (formato antigo), Status 2 = sucesso (formato novo)
+      if (status === '2') {
+        // Status 2 = sucesso no ActiveSMS
         newStatus = 'COMPLETED';
       } else if (status === '8') {
         newStatus = 'CANCELLED';

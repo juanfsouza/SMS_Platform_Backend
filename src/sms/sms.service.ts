@@ -11,6 +11,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 @Injectable()
 export class SmsService {
   private readonly apiUrl = 'https://api.sms-activate.ae/stubs/handler_api.php';
+  private readonly activeSmsUrl = 'https://findexsms.com/sms';
   private readonly logger = new Logger(SmsService.name);
   private readonly MAX_ACTIVATION_AGE = 20 * 60 * 1000; // 20 minutes in milliseconds
 
@@ -177,6 +178,190 @@ export class SmsService {
       this.logger.error(`Failed to get activation status for activationId=${activationId}: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to get activation status: ${error.message}`);
     }
+  }
+
+  async getActiveSmsStatus(activationId: string): Promise<any> {
+    try {
+      const response = await lastValueFrom(
+        this.httpService.get(`${this.activeSmsUrl}/status/${activationId}`),
+      );
+      this.logger.log(`ActiveSMS status response for activationId=${activationId}: ${JSON.stringify(response.data)}`);
+      return response.data;
+    } catch (error) {
+      this.logger.error(`Failed to get ActiveSMS status for activationId=${activationId}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to get ActiveSMS status: ${error.message}`);
+    }
+  }
+
+  async buyActiveSmsNumber(service: string, country: string, userId: number): Promise<any> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    // Mapear serviço e país para ActiveSMS
+    const mappedService = this.mapServiceToActiveSms(service);
+    const mappedCountry = this.mapCountryToActiveSms(country);
+
+    // Obter preço
+    const priceUsd = await this.getActiveSmsPrice(mappedService, mappedCountry);
+    const priceBrl = priceUsd * 5.5; // Conversão USD para BRL (ajuste conforme necessário)
+
+    if (user.balance < priceBrl) {
+      throw new BadRequestException(`Insufficient balance. Required: ${priceBrl.toFixed(2)} credits, Available: ${user.balance} credits`);
+    }
+
+    try {
+      this.logger.log(`Requesting ActiveSMS: service=${mappedService}, country=${mappedCountry}`);
+      
+      // Fazer a compra no ActiveSMS
+      const buyResponse = await lastValueFrom(
+        this.httpService.post(`${this.activeSmsUrl}/buy`, {
+          service: mappedService,
+          country: mappedCountry,
+        }),
+      );
+      
+      this.logger.log(`ActiveSMS buy response: ${JSON.stringify(buyResponse.data)}`);
+      
+      if (buyResponse.data.status !== 'success' || !buyResponse.data.array || buyResponse.data.array.length === 0) {
+        throw new BadRequestException('Failed to purchase number from ActiveSMS');
+      }
+
+      const activationData = buyResponse.data.array[0];
+      const activationId = activationData.id;
+      const phoneNumber = activationData.phone;
+
+      // Criar registro no banco de dados
+      const activation = await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id: userId },
+          data: { balance: { decrement: priceBrl } },
+        }),
+        this.prisma.smsActivation.create({
+          data: {
+            userId,
+            service: mappedService,
+            country: mappedCountry,
+            number: phoneNumber,
+            status: 'PENDING',
+            activationId,
+          },
+        }),
+        this.prisma.transaction.create({
+          data: {
+            userId,
+            amount: priceBrl,
+            type: 'DEBIT',
+            status: 'COMPLETED',
+            description: `SMS purchase: ${service} (${country}), expected ${priceUsd} USD`,
+            smsActivationId: null,
+          },
+        }),
+      ]);
+
+      await this.prisma.transaction.update({
+        where: { id: activation[2].id },
+        data: { smsActivationId: activation[1].id },
+      });
+
+      // Notificar compra de SMS
+      try {
+        await this.notificationsService.notifySmsPurchase(
+          userId,
+          service,
+          country,
+          priceBrl,
+          {
+            activationId,
+            phoneNumber,
+            priceUsd,
+            mappedService,
+            mappedCountry
+          }
+        );
+      } catch (notificationError) {
+        this.logger.error('Failed to send SMS purchase notification:', notificationError);
+      }
+
+      this.logger.log(`ActiveSMS purchase successful for activationId: ${activationId}`);
+      return {
+        activationId,
+        phoneNumber,
+        activationIdFromDb: activation[1].id,
+        creditsSpent: priceBrl,
+        balance: activation[0].balance,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to buy ActiveSMS number: ${error.message}, stack: ${error.stack}`);
+      throw new BadRequestException(`Failed to buy number: ${error.message}`);
+    }
+  }
+
+  private mapServiceToActiveSms(service: string): string {
+    // Mapear serviços do seu sistema para ActiveSMS
+    const serviceMap: Record<string, string> = {
+      'telegram': 'tg',
+      'whatsapp': 'wa',
+      'twitter': 'tw',
+      'instagram': 'ig',
+      'facebook': 'fb',
+      'google': 'go',
+      'youtube': 'yt',
+      'tiktok': 'tt',
+      'discord': 'ds',
+      'snapchat': 'sc',
+      'linkedin': 'li',
+      'twitch': 'tw',
+      'viber': 'vi',
+      'line': 'ln',
+      'wechat': 'wc',
+      'kakao': 'kk',
+    };
+    return serviceMap[service.toLowerCase()] || service;
+  }
+
+  private mapCountryToActiveSms(country: string): string {
+    // Mapear países do seu sistema para ActiveSMS
+    const countryMap: Record<string, string> = {
+      'brazil': '48',
+      'usa': '1',
+      'uk': '44',
+      'germany': '49',
+      'france': '33',
+      'spain': '34',
+      'italy': '39',
+      'russia': '7',
+      'china': '86',
+      'india': '91',
+      'japan': '81',
+      'southkorea': '82',
+      'thailand': '66',
+      'vietnam': '84',
+      'philippines': '63',
+      'indonesia': '62',
+      'malaysia': '60',
+      'singapore': '65',
+      'australia': '61',
+      'canada': '1',
+      'mexico': '52',
+      'argentina': '54',
+      'chile': '56',
+      'colombia': '57',
+      'peru': '51',
+      'venezuela': '58',
+      'ecuador': '593',
+      'uruguay': '598',
+      'paraguay': '595',
+      'bolivia': '591',
+    };
+    return countryMap[country.toLowerCase()] || country;
+  }
+
+  private async getActiveSmsPrice(service: string, country: string): Promise<number> {
+    // Implementar lógica para obter preços do ActiveSMS
+    // Por enquanto, retornar um valor padrão
+    return 0.35; // USD
   }
 
   async getSmsActivateBalance(): Promise<any> {
