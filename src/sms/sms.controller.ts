@@ -56,7 +56,7 @@ export class SmsController {
           id: activation.activationId,
           userid: activation.userId.toString(),
           service: activation.service,
-          phone: activation.number,
+          phone: this.formatPhoneNumber(activation.number, activation.country),
           cost: activation.transactions.find((t) => t.type === 'DEBIT')?.amount || 0,
           status: parsedStatus.status === 'success' ? '2' : parsedStatus.status === 'pending' ? '1' : '8',
           moreCodes: Buffer.from(JSON.stringify([parsedStatus.code])).toString('base64'),
@@ -199,6 +199,15 @@ export class SmsController {
         code: code || null,
       };
 
+      // Se recebeu código, também atualizar o número formatado se necessário
+      if (code && text) {
+        // Extrair número do texto se disponível
+        const phoneFromText = text.match(/\+\d+/);
+        if (phoneFromText) {
+          updateData.number = phoneFromText[0];
+        }
+      }
+
       this.logger.log(`Updating activation ${activationId} to status: ${newStatus}, code: ${code || 'none'}, receivedAt: ${receivedAt}`);
 
       // Atualizar o registro
@@ -278,5 +287,243 @@ export class SmsController {
       this.logger.error(`ActiveSMS cancel webhook processing failed: ${error.message}`, error.stack);
       throw new BadRequestException('Failed to process ActiveSMS cancel webhook: ' + error.message);
     }
+  }
+
+  private formatPhoneNumber(phoneNumber: string, country: string): string {
+    if (!phoneNumber || !country) return phoneNumber;
+
+    // Mapear códigos de país para DDDs (todos os países suportados pelo ActiveSMS)
+    const countryCodeMap: Record<string, string> = {
+      // América do Norte
+      '1': '+1',   // EUA/Canadá
+      '52': '+52', // México
+      
+      // América do Sul
+      '48': '+55', // Brasil
+      '54': '+54', // Argentina
+      '56': '+56', // Chile
+      '57': '+57', // Colômbia
+      '51': '+51', // Peru
+      '58': '+58', // Venezuela
+      '593': '+593', // Equador
+      '598': '+598', // Uruguai
+      '595': '+595', // Paraguai
+      '591': '+591', // Bolívia
+      
+      // Europa
+      '44': '+44', // Reino Unido
+      '49': '+49', // Alemanha
+      '33': '+33', // França
+      '34': '+34', // Espanha
+      '39': '+39', // Itália
+      '7': '+7',   // Rússia
+      '380': '+380', // Ucrânia
+      '420': '+420', // República Tcheca
+      '421': '+421', // Eslováquia
+      '36': '+36', // Hungria
+      '40': '+40', // Romênia
+      '359': '+359', // Bulgária
+      '385': '+385', // Croácia
+      '386': '+386', // Eslovênia
+      '387': '+387', // Bósnia
+      '389': '+389', // Macedônia
+      '381': '+381', // Sérvia
+      '382': '+382', // Montenegro
+      '383': '+383', // Kosovo
+      '355': '+355', // Albânia
+      '30': '+30', // Grécia
+      '90': '+90', // Turquia
+      '31': '+31', // Holanda
+      '32': '+32', // Bélgica
+      '41': '+41', // Suíça
+      '43': '+43', // Áustria
+      '45': '+45', // Dinamarca
+      '46': '+46', // Suécia
+      '47': '+47', // Noruega
+      '358': '+358', // Finlândia
+      '372': '+372', // Estônia
+      '371': '+371', // Letônia
+      '370': '+370', // Lituânia
+      '353': '+353', // Irlanda
+      '351': '+351', // Portugal
+      '375': '+375', // Belarus
+      '373': '+373', // Moldávia
+      
+      // Ásia
+      '86': '+86', // China
+      '91': '+91', // Índia
+      '81': '+81', // Japão
+      '82': '+82', // Coreia do Sul
+      '66': '+66', // Tailândia
+      '84': '+84', // Vietnã
+      '63': '+63', // Filipinas
+      '62': '+62', // Indonésia
+      '60': '+60', // Malásia
+      '65': '+65', // Singapura
+      '886': '+886', // Taiwan
+      '852': '+852', // Hong Kong
+      '853': '+853', // Macau
+      '880': '+880', // Bangladesh
+      '92': '+92', // Paquistão
+      '93': '+93', // Afeganistão
+      '94': '+94', // Sri Lanka
+      '977': '+977', // Nepal
+      '975': '+975', // Butão
+      '960': '+960', // Maldivas
+      '673': '+673', // Brunei
+      '855': '+855', // Camboja
+      '856': '+856', // Laos
+      '95': '+95', // Myanmar
+      '98': '+98', // Irã
+      '964': '+964', // Iraque
+      '965': '+965', // Kuwait
+      '966': '+966', // Arábia Saudita
+      '971': '+971', // Emirados Árabes
+      '973': '+973', // Bahrein
+      '974': '+974', // Qatar
+      '968': '+968', // Omã
+      '962': '+962', // Jordânia
+      '961': '+961', // Líbano
+      '963': '+963', // Síria
+      '972': '+972', // Israel
+      '970': '+970', // Palestina
+      '967': '+967', // Iêmen
+      '976': '+976', // Mongólia
+      '992': '+992', // Tajiquistão
+      '993': '+993', // Turcomenistão
+      '994': '+994', // Azerbaijão
+      '995': '+995', // Geórgia
+      '996': '+996', // Quirguistão
+      '998': '+998', // Uzbequistão
+      
+      // África
+      '20': '+20', // Egito
+      '218': '+218', // Líbia
+      '216': '+216', // Tunísia
+      '213': '+213', // Argélia
+      '212': '+212', // Marrocos
+      '222': '+222', // Mauritânia
+      '220': '+220', // Gâmbia
+      '221': '+221', // Senegal
+      '223': '+223', // Mali
+      '224': '+224', // Guiné
+      '225': '+225', // Costa do Marfim
+      '226': '+226', // Burkina Faso
+      '227': '+227', // Níger
+      '228': '+228', // Togo
+      '229': '+229', // Benim
+      '230': '+230', // Maurício
+      '231': '+231', // Libéria
+      '232': '+232', // Serra Leoa
+      '233': '+233', // Gana
+      '234': '+234', // Nigéria
+      '235': '+235', // Chade
+      '236': '+236', // República Centro-Africana
+      '237': '+237', // Camarões
+      '238': '+238', // Cabo Verde
+      '239': '+239', // São Tomé e Príncipe
+      '240': '+240', // Guiné Equatorial
+      '241': '+241', // Gabão
+      '242': '+242', // República do Congo
+      '243': '+243', // República Democrática do Congo
+      '244': '+244', // Angola
+      '245': '+245', // Guiné-Bissau
+      '246': '+246', // Território Britânico do Oceano Índico
+      '248': '+248', // Seicheles
+      '249': '+249', // Sudão
+      '250': '+250', // Ruanda
+      '251': '+251', // Etiópia
+      '252': '+252', // Somália
+      '253': '+253', // Djibuti
+      '254': '+254', // Quênia
+      '255': '+255', // Tanzânia
+      '256': '+256', // Uganda
+      '257': '+257', // Burundi
+      '258': '+258', // Moçambique
+      '260': '+260', // Zâmbia
+      '261': '+261', // Madagáscar
+      '262': '+262', // Reunião
+      '263': '+263', // Zimbábue
+      '264': '+264', // Namíbia
+      '265': '+265', // Malawi
+      '266': '+266', // Lesoto
+      '267': '+267', // Botsuana
+      '268': '+268', // Suazilândia
+      '269': '+269', // Comores
+      '290': '+290', // Santa Helena
+      '291': '+291', // Eritreia
+      
+      // Oceania
+      '61': '+61', // Austrália
+      '64': '+64', // Nova Zelândia
+      '675': '+675', // Papua-Nova Guiné
+      '676': '+676', // Tonga
+      '677': '+677', // Ilhas Salomão
+      '678': '+678', // Vanuatu
+      '679': '+679', // Fiji
+      '680': '+680', // Palau
+      '681': '+681', // Wallis e Futuna
+      '682': '+682', // Ilhas Cook
+      '683': '+683', // Niue
+      '684': '+684', // Samoa Americana
+      '685': '+685', // Samoa
+      '686': '+686', // Kiribati
+      '687': '+687', // Nova Caledônia
+      '688': '+688', // Tuvalu
+      '689': '+689', // Polinésia Francesa
+      '690': '+690', // Tokelau
+      '691': '+691', // Micronésia
+      '692': '+692', // Ilhas Marshall
+      '674': '+674', // Nauru
+      
+      // Territórios e ilhas
+      '500': '+500', // Ilhas Malvinas
+      '501': '+501', // Belize
+      '502': '+502', // Guatemala
+      '503': '+503', // El Salvador
+      '504': '+504', // Honduras
+      '505': '+505', // Nicarágua
+      '506': '+506', // Costa Rica
+      '507': '+507', // Panamá
+      '508': '+508', // São Pedro e Miquelon
+      '509': '+509', // Haiti
+      '590': '+590', // Guadalupe
+      '592': '+592', // Guiana
+      '594': '+594', // Guiana Francesa
+      '596': '+596', // Martinica
+      '597': '+597', // Suriname
+      '599': '+599', // Antilhas Holandesas
+      '670': '+670', // Timor-Leste
+      '672': '+672', // Território Antártico Australiano
+      '850': '+850', // Coreia do Norte
+      
+      // Microestados europeus
+      '350': '+350', // Gibraltar
+      '352': '+352', // Luxemburgo
+      '354': '+354', // Islândia
+      '356': '+356', // Malta
+      '357': '+357', // Chipre
+      '374': '+374', // Armênia
+      '376': '+376', // Andorra
+      '377': '+377', // Mônaco
+      '378': '+378', // San Marino
+      '423': '+423', // Liechtenstein
+      '297': '+297', // Aruba
+      '298': '+298', // Ilhas Feroé
+      '299': '+299', // Groenlândia
+    };
+
+    const countryCode = countryCodeMap[country] || `+${country}`;
+    
+    // Remover espaços e caracteres especiais
+    const cleanNumber = phoneNumber.replace(/\D/g, '');
+    
+    // Se o número já começar com o código do país, não adicionar novamente
+    if (cleanNumber.startsWith(country.replace(/\D/g, ''))) {
+      return `+${cleanNumber}`;
+    }
+    
+    // Adicionar código do país
+    return `${countryCode}${cleanNumber}`;
   }
 }
