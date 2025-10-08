@@ -26,29 +26,17 @@ export class SmsController {
   @Post('buy')
   async buyNumber(@Body(new ZodValidationPipe(BuySmsDto)) body: BuySmsDto, @Req() req) {
     const userId = req.user.id;
-    // Usar ActiveSMS em vez do SMS-Activate
-    return this.smsService.buyActiveSmsNumber(body.service, body.country, userId);
+    return this.smsService.getNumber(body.service, body.country, userId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('status/:activationId')
   async getStatus(@Param('activationId') activationId: string, @Req() req): Promise<any> {
     const userId = req.user.id;
-    
-    // Usar ActiveSMS em vez do SMS-Activate
-    const apiStatus = await this.smsService.getActiveSmsStatus(activationId);
-    
-    // Parsear resposta do ActiveSMS
-    let parsedStatus: any;
-    if (apiStatus.status === 'success' && apiStatus.array && apiStatus.array.length > 0) {
-      const activationData = apiStatus.array[0];
-      parsedStatus = {
-        status: activationData.status === '2' ? 'success' : activationData.status === '1' ? 'pending' : 'cancelled',
-        code: activationData.code || null,
-      };
-    } else {
-      parsedStatus = { status: 'pending', code: null };
-    }
+    const status = await this.smsService.getActivationStatus(activationId);
+
+    // Parsear o status usando StatusDto
+    const parsedStatus = StatusDto.parse(status);
 
     // Buscar informações adicionais do banco de dados
     const activation = await this.prismaService.smsActivation.findUnique({
@@ -112,28 +100,9 @@ export class SmsController {
     return this.smsService.getRecentActivations(userId);
   }
 
-  @Get('balance')
-  @UseGuards(JwtAuthGuard)
-  async getSmsActivateBalance() {
-    return this.smsService.getSmsActivateBalance();
-  }
-
   @Post('webhook')
-  async handleWebhook(
-    @Body(new ZodValidationPipe(WebhookDto)) body: WebhookDto,
-    @Req() req: any
-  ) {
+  async handleWebhook(@Body(new ZodValidationPipe(WebhookDto)) body: WebhookDto) {
     const { activationId, status, code } = body;
-    
-    // Log seguro (sem dados sensíveis)
-    this.logger.log(`Webhook received: activationId=${activationId}, status=${status}, hasCode=${!!code}`);
-    
-    // Validação básica de segurança
-    if (!activationId || activationId.length < 3) {
-      this.logger.warn(`Invalid webhook activationId: ${activationId}`);
-      throw new BadRequestException('Invalid activation ID');
-    }
-    
     try {
       const activation = await this.prismaService.smsActivation.findUnique({
         where: { activationId },
@@ -143,70 +112,16 @@ export class SmsController {
         throw new NotFoundException(`No SmsActivation record found for activationId: ${activationId}`);
       }
 
-      this.logger.log(`Current activation status: ${activation.status}, has code: ${!!activation.code}`);
-
-      // Validação de status válidos
-      const validStatuses = ['1', '2', '3', '4', '5', '6', '8'];
-      if (!validStatuses.includes(status)) {
-        this.logger.warn(`Invalid webhook status: ${status} for activationId: ${activationId}`);
-        throw new BadRequestException(`Invalid status: ${status}`);
-      }
-
-      // Definir status baseado no webhook (ActiveSMS usa status '2' para sucesso)
-      let newStatus: string;
-      if (status === '2') {
-        // Status 2 = sucesso no ActiveSMS
-        newStatus = 'COMPLETED';
-      } else if (status === '8') {
-        newStatus = 'CANCELLED';
-      } else {
-        newStatus = 'PENDING';
-      }
-
       const updateData: any = {
-        status: newStatus,
+        status: status === '6' ? 'COMPLETED' : status === '8' ? 'CANCELLED' : 'PENDING',
         code: code || null,
       };
 
-      this.logger.log(`Processing webhook: activationId=${activationId}, status=${status}, newStatus=${newStatus}, code=${code || 'none'}`);
-
       if (status === '8') {
-        // Verificar se já foi estornado anteriormente
-        const existingRefund = await this.prismaService.transaction.findFirst({
-          where: {
-            smsActivationId: activation.id,
-            type: 'REFUNDED',
-            status: 'COMPLETED',
-          },
-        });
-
-        if (existingRefund) {
-          this.logger.log(`Activation ${activationId} already refunded, skipping refund`);
-          await this.prismaService.smsActivation.update({
-            where: { activationId },
-            data: updateData,
-          });
-          return { status: 'received' };
-        }
-
-        // Verificar se o usuário já recebeu o código (não deve reembolsar)
-        if (activation.status === 'COMPLETED' && activation.code) {
-          this.logger.log(`Activation ${activationId} already completed with code, NOT refunding`);
-          // NÃO atualizar status se já foi completado com código
-          return { status: 'received' };
-        }
-
-        // Verificar se já está cancelado (evitar processamento duplicado)
-        if (activation.status === 'CANCELLED') {
-          this.logger.log(`Activation ${activationId} already cancelled, skipping`);
-          return { status: 'received' };
-        }
-
         const debitTransaction = activation.transactions.find(
           (t) => t.type === 'DEBIT' && t.status === 'COMPLETED' && t.smsActivationId === activation.id,
         );
         if (debitTransaction && debitTransaction.amount > 0) {
-          // Transação atômica para garantir consistência
           await this.prismaService.$transaction([
             this.prismaService.user.update({
               where: { id: activation.userId },
@@ -218,7 +133,7 @@ export class SmsController {
                 amount: debitTransaction.amount,
                 type: 'REFUNDED',
                 status: 'COMPLETED',
-                description: `Refund for SMS activation: ${activation.service} (${activation.country}) - Service failed before code delivery`,
+                description: `Refund for SMS activation: ${activation.service} (${activation.country})`,
                 smsActivationId: activation.id,
               },
             }),
@@ -231,7 +146,7 @@ export class SmsController {
               data: updateData,
             }),
           ]);
-          this.logger.log(`Refunded ${debitTransaction.amount} credits for activation ${activationId} - service failed before code delivery`);
+          this.logger.log(`Refunded ${debitTransaction.amount} credits for activation ${activationId}`);
         } else {
           await this.prismaService.smsActivation.update({
             where: { activationId },
@@ -243,20 +158,125 @@ export class SmsController {
           where: { activationId },
           data: updateData,
         });
-        this.logger.log(`Updated activation ${activationId} to status: ${newStatus}, code: ${code || 'none'}`);
       }
 
-      this.logger.log(`Webhook processed successfully for activationId: ${activationId}`);
       return { status: 'received' };
     } catch (error) {
-      this.logger.error(`Webhook processing failed for activationId: ${activationId}, error: ${error.message}`, error.stack);
-      
       if (error instanceof NotFoundException) {
         throw error;
       }
+      throw new BadRequestException('Failed to process webhook: ' + error.message);
+    }
+  }
+
+  @Post('webhook/active-sms')
+  async handleActiveSmsWebhook(@Body() body: any) {
+    this.logger.log(`ActiveSMS webhook received: ${JSON.stringify(body)}`);
+    
+    try {
+      // Parsear formato do ActiveSMS (baseado na documentação oficial)
+      const { activationId, service, text, code, country, receivedAt } = body;
       
-      // Não expor detalhes internos do erro
-      throw new BadRequestException('Failed to process webhook');
+      if (!activationId) {
+        throw new BadRequestException('activationId is required');
+      }
+
+      const activation = await this.prismaService.smsActivation.findUnique({
+        where: { activationId: activationId.toString() },
+        include: { transactions: true },
+      });
+
+      if (!activation) {
+        this.logger.warn(`No activation found for ActiveSMS webhook: ${activationId}`);
+        return { status: 'ignored' };
+      }
+
+      // Se recebeu código, significa que foi completado
+      const newStatus = code ? 'COMPLETED' : 'PENDING';
+
+      const updateData: any = {
+        status: newStatus,
+        code: code || null,
+      };
+
+      this.logger.log(`Updating activation ${activationId} to status: ${newStatus}, code: ${code || 'none'}, receivedAt: ${receivedAt}`);
+
+      // Atualizar o registro
+      await this.prismaService.smsActivation.update({
+        where: { activationId: activationId.toString() },
+        data: updateData,
+      });
+
+      this.logger.log(`ActiveSMS webhook processed successfully for activationId: ${activationId}`);
+      return { status: 'received' };
+    } catch (error) {
+      this.logger.error(`ActiveSMS webhook processing failed: ${error.message}`, error.stack);
+      throw new BadRequestException('Failed to process ActiveSMS webhook: ' + error.message);
+    }
+  }
+
+  @Post('webhook/active-sms-cancel')
+  async handleActiveSmsCancelWebhook(@Body() body: any) {
+    this.logger.log(`ActiveSMS cancel webhook received: ${JSON.stringify(body)}`);
+    
+    try {
+      // Para cancelamentos/timeout, o ActiveSMS pode enviar um webhook diferente
+      const { activationId } = body;
+      
+      if (!activationId) {
+        throw new BadRequestException('activationId is required');
+      }
+
+      const activation = await this.prismaService.smsActivation.findUnique({
+        where: { activationId: activationId.toString() },
+        include: { transactions: true },
+      });
+
+      if (!activation) {
+        this.logger.warn(`No activation found for ActiveSMS cancel webhook: ${activationId}`);
+        return { status: 'ignored' };
+      }
+
+      // Processar estorno para cancelamento
+      if (activation.status !== 'COMPLETED') {
+        const debitTransaction = activation.transactions.find(
+          (t) => t.type === 'DEBIT' && t.status === 'COMPLETED' && t.smsActivationId === activation.id,
+        );
+        
+        if (debitTransaction && debitTransaction.amount > 0) {
+          await this.prismaService.$transaction([
+            this.prismaService.user.update({
+              where: { id: activation.userId },
+              data: { balance: { increment: debitTransaction.amount } },
+            }),
+            this.prismaService.transaction.create({
+              data: {
+                userId: activation.userId,
+                amount: debitTransaction.amount,
+                type: 'REFUNDED',
+                status: 'COMPLETED',
+                description: `Refund for SMS activation: ${activation.service} (${activation.country}) - ActiveSMS timeout`,
+                smsActivationId: activation.id,
+              },
+            }),
+            this.prismaService.transaction.update({
+              where: { id: debitTransaction.id },
+              data: { status: 'REFUNDED' },
+            }),
+            this.prismaService.smsActivation.update({
+              where: { activationId: activationId.toString() },
+              data: { status: 'CANCELLED' },
+            }),
+          ]);
+          this.logger.log(`Refunded ${debitTransaction.amount} credits for activation ${activationId} via ActiveSMS cancel webhook`);
+        }
+      }
+
+      this.logger.log(`ActiveSMS cancel webhook processed successfully for activationId: ${activationId}`);
+      return { status: 'received' };
+    } catch (error) {
+      this.logger.error(`ActiveSMS cancel webhook processing failed: ${error.message}`, error.stack);
+      throw new BadRequestException('Failed to process ActiveSMS cancel webhook: ' + error.message);
     }
   }
 }
