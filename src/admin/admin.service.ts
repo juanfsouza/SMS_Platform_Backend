@@ -680,6 +680,9 @@ export class AdminService {
             where: {
               type: 'DEBIT',
               status: 'COMPLETED',
+              smsActivationId: {
+                not: null,
+              },
             },
             orderBy: { createdAt: 'desc' },
             take: 1,
@@ -696,7 +699,10 @@ export class AdminService {
       for (const activation of expiredActivations) {
         try {
           const transaction = activation.transactions[0];
-          if (!transaction) continue;
+          if (!transaction) {
+            this.logger.log(`No DEBIT transaction found for activation ${activation.activationId}, skipping`);
+            continue;
+          }
 
           // Verificar se já existe estorno
           const existingRefund = await this.prisma.transaction.findFirst({
@@ -711,13 +717,24 @@ export class AdminService {
             continue;
           }
 
+          // Verificar se a transação está relacionada à ativação correta
+          if (transaction.smsActivationId !== activation.id) {
+            this.logger.log(`Transaction ${transaction.id} is not related to activation ${activation.id}, skipping`);
+            continue;
+          }
+
           // Processar estorno automático
           await this.prisma.$transaction(async (tx) => {
+            // Log para debug
+            this.logger.log(`Processing refund for activation ${activation.activationId}: user ${activation.userId}, amount ${transaction.amount}, current balance ${activation.user.balance}`);
+            
             // Atualizar saldo
-            await tx.user.update({
+            const updatedUser = await tx.user.update({
               where: { id: activation.userId },
               data: { balance: { increment: transaction.amount } },
             });
+            
+            this.logger.log(`User ${activation.userId} balance updated from ${activation.user.balance} to ${updatedUser.balance}`);
 
             // Criar transação de estorno
             await tx.transaction.create({
