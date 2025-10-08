@@ -182,8 +182,21 @@ export class SmsService {
 
   async getActiveSmsStatus(activationId: string): Promise<any> {
     try {
+      // Obter API key e base URL do ActiveSMS
+      const activeSmsApiKey = this.configService.get('activeSms.apiKey');
+      const activeSmsBaseUrl = this.configService.get('activeSms.baseUrl');
+      
+      if (!activeSmsApiKey) {
+        throw new BadRequestException('ActiveSMS API key not configured');
+      }
+      
       const response = await lastValueFrom(
-        this.httpService.get(`${this.activeSmsUrl}/status/${activationId}`),
+        this.httpService.get(`${activeSmsBaseUrl}/sms/status/${activationId}`, {
+          headers: {
+            'Authorization': `Bearer ${activeSmsApiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }),
       );
       this.logger.log(`ActiveSMS status response for activationId=${activationId}: ${JSON.stringify(response.data)}`);
       return response.data;
@@ -214,11 +227,24 @@ export class SmsService {
     try {
       this.logger.log(`Requesting ActiveSMS: service=${mappedService}, country=${mappedCountry}`);
       
-      // Fazer a compra no ActiveSMS
+      // Obter API key do ActiveSMS
+      const activeSmsApiKey = this.configService.get('activeSms.apiKey');
+      const activeSmsBaseUrl = this.configService.get('activeSms.baseUrl');
+      
+      if (!activeSmsApiKey) {
+        throw new BadRequestException('ActiveSMS API key not configured');
+      }
+      
+      // Fazer a compra no ActiveSMS com autenticação
       const buyResponse = await lastValueFrom(
-        this.httpService.post(`${this.activeSmsUrl}/buy`, {
+        this.httpService.post(`${activeSmsBaseUrl}/sms/buy`, {
           service: mappedService,
           country: mappedCountry,
+        }, {
+          headers: {
+            'Authorization': `Bearer ${activeSmsApiKey}`,
+            'Content-Type': 'application/json',
+          },
         }),
       );
       

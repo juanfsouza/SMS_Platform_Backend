@@ -8,6 +8,10 @@ export default () => ({
   smsActivate: {
     apiKey: process.env.SMS_ACTIVATE_API_KEY,
   },
+  activeSms: {
+    apiKey: process.env.ACTIVE_SMS_API_KEY,
+    baseUrl: process.env.ACTIVE_SMS_BASE_URL || 'https://findexsms.com',
+  },
   pushinpay: {
     apiKey: process.env.PUSHINPAY_API_KEY,
   },
