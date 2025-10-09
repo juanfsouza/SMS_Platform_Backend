@@ -252,7 +252,12 @@ export class SmsController {
           (t) => t.type === 'DEBIT' && t.status === 'COMPLETED' && t.smsActivationId === activation.id,
         );
         
-        if (debitTransaction && debitTransaction.amount > 0) {
+        // Verificar se já existe estorno para evitar duplicação
+        const existingRefund = activation.transactions.find(
+          (t) => t.type === 'REFUNDED' && t.smsActivationId === activation.id,
+        );
+        
+        if (debitTransaction && debitTransaction.amount > 0 && !existingRefund) {
           await this.prismaService.$transaction([
             this.prismaService.user.update({
               where: { id: activation.userId },
@@ -278,6 +283,8 @@ export class SmsController {
             }),
           ]);
           this.logger.log(`Refunded ${debitTransaction.amount} credits for activation ${activationId} via ActiveSMS cancel webhook`);
+        } else if (existingRefund) {
+          this.logger.log(`Activation ${activationId} already has refund, skipping ActiveSMS cancel webhook`);
         }
       }
 
