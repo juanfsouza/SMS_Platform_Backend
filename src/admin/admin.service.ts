@@ -655,15 +655,16 @@ export class AdminService {
   }
 
   /**
-   * Verifica e processa estornos automáticos para ativações expiradas
+   * Verifica e processa cancelamentos automáticos para ativações expiradas
+   * NOVA LÓGICA: Não há estornos, apenas cancelamentos de transações pendentes
    */
   async processAutomaticRefunds(): Promise<any> {
     try {
-      this.logger.log('Starting automatic refunds check...');
+      this.logger.log('Starting automatic cancellations check...');
 
       const cutoffTime = new Date(Date.now() - this.MAX_REFUND_AGE);
 
-      // Buscar ativações que precisam de estorno automático
+      // Buscar ativações que precisam de cancelamento automático
       const expiredActivations = await this.prisma.smsActivation.findMany({
         where: {
           createdAt: { lte: cutoffTime },
@@ -671,7 +672,7 @@ export class AdminService {
           transactions: {
             some: {
               type: 'DEBIT',
-              status: 'COMPLETED',
+              status: 'PENDING',
             },
           },
         },
@@ -679,7 +680,7 @@ export class AdminService {
           transactions: {
             where: {
               type: 'DEBIT',
-              status: 'COMPLETED',
+              status: 'PENDING',
               smsActivationId: {
                 not: null,
               },
@@ -691,29 +692,16 @@ export class AdminService {
         },
       });
 
-      this.logger.log(`Found ${expiredActivations.length} activations for automatic refund`);
+      this.logger.log(`Found ${expiredActivations.length} activations for automatic cancellation`);
 
-      let processedRefunds = 0;
-      const results: { activationId: string | null; userId: number; refundedAmount: number }[] = [];
+      let processedCancellations = 0;
+      const results: { activationId: string | null; userId: number; cancelledAmount: number }[] = [];
 
       for (const activation of expiredActivations) {
         try {
           const transaction = activation.transactions[0];
           if (!transaction) {
-            this.logger.log(`No DEBIT transaction found for activation ${activation.activationId}, skipping`);
-            continue;
-          }
-
-          // Verificar se já existe estorno
-          const existingRefund = await this.prisma.transaction.findFirst({
-            where: {
-              smsActivationId: activation.id,
-              type: 'REFUNDED',
-            },
-          });
-
-          if (existingRefund) {
-            this.logger.log(`Activation ${activation.activationId} already has refund, skipping`);
+            this.logger.log(`No PENDING transaction found for activation ${activation.activationId}, skipping`);
             continue;
           }
 
@@ -723,35 +711,17 @@ export class AdminService {
             continue;
           }
 
-          // Processar estorno automático
+          // Processar cancelamento automático (não há estorno, apenas cancelamento)
           await this.prisma.$transaction(async (tx) => {
-            // Log para debug
-            this.logger.log(`Processing refund for activation ${activation.activationId}: user ${activation.userId}, amount ${transaction.amount}, current balance ${activation.user.balance}`);
-            
-            // Atualizar saldo
-            const updatedUser = await tx.user.update({
-              where: { id: activation.userId },
-              data: { balance: { increment: transaction.amount } },
-            });
-            
-            this.logger.log(`User ${activation.userId} balance updated from ${activation.user.balance} to ${updatedUser.balance}`);
+            this.logger.log(`Processing cancellation for activation ${activation.activationId}: user ${activation.userId}, amount ${transaction.amount} (not charged)`);
 
-            // Criar transação de estorno
-            await tx.transaction.create({
-              data: {
-                userId: activation.userId,
-                amount: transaction.amount,
-                type: 'REFUNDED',
-                status: 'COMPLETED',
-                description: `Automatic refund for expired SMS activation: ${activation.service} (${activation.country}) - 20 minute timeout`,
-                smsActivationId: activation.id,
-              },
-            });
-
-            // Marcar original como estornada
+            // Cancelar transação pendente
             await tx.transaction.update({
               where: { id: transaction.id },
-              data: { status: 'REFUNDED' },
+              data: { 
+                status: 'CANCELLED',
+                description: `Automatic cancellation for expired SMS activation: ${activation.service} (${activation.country}) - 20 minute timeout, no charge applied`,
+              },
             });
 
             // Atualizar ativação
@@ -761,24 +731,24 @@ export class AdminService {
             });
           });
 
-          processedRefunds++;
+          processedCancellations++;
           results.push({
             activationId: activation.activationId,
             userId: activation.userId,
-            refundedAmount: transaction.amount,
+            cancelledAmount: transaction.amount,
           });
 
-          this.logger.log(`Automatic refund processed for activation ${activation.activationId}`);
+          this.logger.log(`Automatic cancellation processed for activation ${activation.activationId} - no charge applied`);
         } catch (error) {
-          this.logger.error(`Failed to process automatic refund for activation ${activation.id}: ${error.message}`);
+          this.logger.error(`Failed to process automatic cancellation for activation ${activation.id}: ${error.message}`);
         }
       }
 
-      this.logger.log(`Automatic refunds completed: ${processedRefunds} processed`);
+      this.logger.log(`Automatic cancellations completed: ${processedCancellations} processed`);
 
       return {
         success: true,
-        processedCount: processedRefunds,
+        processedCount: processedCancellations,
         results,
       };
     } catch (error) {

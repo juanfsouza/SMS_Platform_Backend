@@ -117,44 +117,54 @@ export class SmsController {
         code: code || null,
       };
 
-      if (status === '8') {
-        const debitTransaction = activation.transactions.find(
-          (t) => t.type === 'DEBIT' && t.status === 'COMPLETED' && t.smsActivationId === activation.id,
+      // NOVA LÓGICA: Debitar apenas quando SMS for recebido com sucesso
+      if (status === '6' && code) {
+        // SMS recebido com sucesso - agora debitar o valor
+        const pendingTransaction = activation.transactions.find(
+          (t) => t.type === 'DEBIT' && t.status === 'PENDING' && t.smsActivationId === activation.id,
         );
         
-        // Verificar se já existe estorno para evitar duplicação
-        const existingRefund = activation.transactions.find(
-          (t) => t.type === 'REFUNDED' && t.smsActivationId === activation.id,
-        );
-        
-        if (debitTransaction && debitTransaction.amount > 0 && !existingRefund) {
+        if (pendingTransaction && pendingTransaction.amount > 0) {
           await this.prismaService.$transaction([
             this.prismaService.user.update({
               where: { id: activation.userId },
-              data: { balance: { increment: debitTransaction.amount } },
-            }),
-            this.prismaService.transaction.create({
-              data: {
-                userId: activation.userId,
-                amount: debitTransaction.amount,
-                type: 'REFUNDED',
-                status: 'COMPLETED',
-                description: `Refund for SMS activation: ${activation.service} (${activation.country})`,
-                smsActivationId: activation.id,
-              },
+              data: { balance: { decrement: pendingTransaction.amount } },
             }),
             this.prismaService.transaction.update({
-              where: { id: debitTransaction.id },
-              data: { status: 'REFUNDED' },
+              where: { id: pendingTransaction.id },
+              data: {
+                status: 'COMPLETED',
+                description: `SMS purchase completed: ${activation.service} (${activation.country}) - SMS received successfully`,
+              },
             }),
             this.prismaService.smsActivation.update({
               where: { activationId },
               data: updateData,
             }),
           ]);
-          this.logger.log(`Refunded ${debitTransaction.amount} credits for activation ${activationId}`);
-        } else if (existingRefund) {
-          this.logger.log(`Activation ${activationId} already has refund, skipping SMS-Activate webhook`);
+          this.logger.log(`Charged ${pendingTransaction.amount} credits for successful SMS activation ${activationId}`);
+        }
+      } else if (status === '8') {
+        // Cancelamento - apenas cancelar transação PENDING, não há estorno necessário
+        const pendingTransaction = activation.transactions.find(
+          (t) => t.type === 'DEBIT' && t.status === 'PENDING' && t.smsActivationId === activation.id,
+        );
+        
+        if (pendingTransaction) {
+          await this.prismaService.$transaction([
+            this.prismaService.transaction.update({
+              where: { id: pendingTransaction.id },
+              data: { 
+                status: 'CANCELLED',
+                description: `SMS activation cancelled: ${activation.service} (${activation.country}) - No charge applied`,
+              },
+            }),
+            this.prismaService.smsActivation.update({
+              where: { activationId },
+              data: updateData,
+            }),
+          ]);
+          this.logger.log(`Cancelled pending transaction for activation ${activationId} - no charge applied`);
         } else {
           await this.prismaService.smsActivation.update({
             where: { activationId },
@@ -218,11 +228,46 @@ export class SmsController {
 
       this.logger.log(`Updating activation ${activationId} to status: ${newStatus}, code: ${code || 'none'}, receivedAt: ${receivedAt}`);
 
-      // Atualizar o registro
-      await this.prismaService.smsActivation.update({
-        where: { activationId: activationId.toString() },
-        data: updateData,
-      });
+      // NOVA LÓGICA: Debitar apenas quando SMS for recebido com sucesso
+      if (code) {
+        // SMS recebido com sucesso - agora debitar o valor
+        const pendingTransaction = activation.transactions.find(
+          (t) => t.type === 'DEBIT' && t.status === 'PENDING' && t.smsActivationId === activation.id,
+        );
+        
+        if (pendingTransaction && pendingTransaction.amount > 0) {
+          await this.prismaService.$transaction([
+            this.prismaService.user.update({
+              where: { id: activation.userId },
+              data: { balance: { decrement: pendingTransaction.amount } },
+            }),
+            this.prismaService.transaction.update({
+              where: { id: pendingTransaction.id },
+              data: { 
+                status: 'COMPLETED',
+                description: `SMS purchase completed via ActiveSMS: ${activation.service} (${activation.country}) - SMS received successfully`,
+              },
+            }),
+            this.prismaService.smsActivation.update({
+              where: { activationId: activationId.toString() },
+              data: updateData,
+            }),
+          ]);
+          this.logger.log(`Charged ${pendingTransaction.amount} credits for successful ActiveSMS activation ${activationId}`);
+        } else {
+          // Atualizar apenas o status se não houver transação pendente
+          await this.prismaService.smsActivation.update({
+            where: { activationId: activationId.toString() },
+            data: updateData,
+          });
+        }
+      } else {
+        // Atualizar o registro normalmente se não recebeu código
+        await this.prismaService.smsActivation.update({
+          where: { activationId: activationId.toString() },
+          data: updateData,
+        });
+      }
 
       this.logger.log(`ActiveSMS webhook processed successfully for activationId: ${activationId}`);
       return { status: 'received' };
@@ -254,45 +299,32 @@ export class SmsController {
         return { status: 'ignored' };
       }
 
-      // Processar estorno para cancelamento
+      // NOVA LÓGICA: Cancelamento - apenas cancelar transação PENDING, não há estorno necessário
       if (activation.status !== 'COMPLETED') {
-        const debitTransaction = activation.transactions.find(
-          (t) => t.type === 'DEBIT' && t.status === 'COMPLETED' && t.smsActivationId === activation.id,
+        const pendingTransaction = activation.transactions.find(
+          (t) => t.type === 'DEBIT' && t.status === 'PENDING' && t.smsActivationId === activation.id,
         );
         
-        // Verificar se já existe estorno para evitar duplicação
-        const existingRefund = activation.transactions.find(
-          (t) => t.type === 'REFUNDED' && t.smsActivationId === activation.id,
-        );
-        
-        if (debitTransaction && debitTransaction.amount > 0 && !existingRefund) {
+        if (pendingTransaction) {
           await this.prismaService.$transaction([
-            this.prismaService.user.update({
-              where: { id: activation.userId },
-              data: { balance: { increment: debitTransaction.amount } },
-            }),
-            this.prismaService.transaction.create({
-              data: {
-                userId: activation.userId,
-                amount: debitTransaction.amount,
-                type: 'REFUNDED',
-                status: 'COMPLETED',
-                description: `Refund for SMS activation: ${activation.service} (${activation.country}) - ActiveSMS timeout`,
-                smsActivationId: activation.id,
-              },
-            }),
             this.prismaService.transaction.update({
-              where: { id: debitTransaction.id },
-              data: { status: 'REFUNDED' },
+              where: { id: pendingTransaction.id },
+              data: { 
+                status: 'CANCELLED',
+                description: `SMS activation cancelled via ActiveSMS: ${activation.service} (${activation.country}) - No charge applied`,
+              },
             }),
             this.prismaService.smsActivation.update({
               where: { activationId: activationId.toString() },
               data: { status: 'CANCELLED' },
             }),
           ]);
-          this.logger.log(`Refunded ${debitTransaction.amount} credits for activation ${activationId} via ActiveSMS cancel webhook`);
-        } else if (existingRefund) {
-          this.logger.log(`Activation ${activationId} already has refund, skipping ActiveSMS cancel webhook`);
+          this.logger.log(`Cancelled pending ActiveSMS transaction for activation ${activationId} - no charge applied`);
+        } else {
+          await this.prismaService.smsActivation.update({
+            where: { activationId: activationId.toString() },
+            data: { status: 'CANCELLED' },
+          });
         }
       }
 

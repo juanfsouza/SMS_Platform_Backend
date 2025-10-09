@@ -76,45 +76,37 @@ export class SmsService {
         throw new BadRequestException(`Failed to get number: Invalid status "${status}" from SMS-Activate`);
       }
 
-      const activation = await this.prisma.$transaction([
-        this.prisma.user.update({
-          where: { id: userId },
-          data: { balance: { decrement: priceBrl } },
-        }),
-        this.prisma.smsActivation.create({
-          data: {
-            userId,
-            service: mappedService,
-            country: mappedCountry,
-            number: phoneNumber,
-            status: 'PENDING',
-            activationId,
-          },
-        }),
-        this.prisma.transaction.create({
-          data: {
-            userId,
-            amount: priceBrl,
-            type: 'DEBIT',
-            status: 'COMPLETED',
-            description: `SMS purchase: ${service} (${country}), expected ${priceUsd} USD`,
-            smsActivationId: null,
-          },
-        }),
-      ]);
+      // NOVA LÓGICA: Não descontar na compra, apenas reservar
+      const activation = await this.prisma.smsActivation.create({
+        data: {
+          userId,
+          service: mappedService,
+          country: mappedCountry,
+          number: phoneNumber,
+          status: 'PENDING',
+          activationId,
+        },
+      });
 
-      await this.prisma.transaction.update({
-        where: { id: activation[2].id },
-        data: { smsActivationId: activation[1].id },
+      // Criar transação como PENDING (não debitada ainda)
+      await this.prisma.transaction.create({
+        data: {
+          userId,
+          amount: priceBrl,
+          type: 'DEBIT',
+          status: 'PENDING', // Mudança: PENDING em vez de COMPLETED
+          description: `SMS purchase: ${service} (${country}), expected ${priceUsd} USD - Pending SMS delivery`,
+          smsActivationId: activation.id,
+        },
       });
 
       this.logger.warn(`Please verify SMS-Activate account balance for activationId: ${activationId}`);
       return {
         activationId,
         phoneNumber,
-        activationIdFromDb: activation[1].id,
-        creditsSpent: priceBrl,
-        balance: activation[0].balance,
+        activationIdFromDb: activation.id,
+        creditsSpent: 0, // Mudança: 0 porque não foi debitado ainda
+        balance: user.balance, // Mudança: usar saldo original do usuário
       };
     } catch (error) {
       this.logger.error(`Failed to get number: ${error.message}, stack: ${error.stack}`);
